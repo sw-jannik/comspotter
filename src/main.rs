@@ -2,21 +2,25 @@ mod chaseplane;
 mod trackaudio_interface;
 
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::time::Duration;
 
 use chaseplane::ChaseplaneClient;
 
+/// Minimum continuous transmission time before a station is tracked in ChasePlane.
+const TRACK_THRESHOLD: Duration = Duration::from_millis(500);
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let chaseplane = ChaseplaneClient::connect_default().await?;
+    let chaseplane = Arc::new(ChaseplaneClient::connect_default().await?);
 
     tokio::try_join!(
         async {
-            trackaudio_interface::connect()
+            trackaudio_interface::connect(chaseplane.clone(), TRACK_THRESHOLD)
                 .await
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)
         },
-        track_new_traffic(&chaseplane),
+        // track_new_traffic(&chaseplane),
     )?;
 
     Ok(())
