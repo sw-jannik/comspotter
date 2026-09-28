@@ -54,7 +54,9 @@ name = "comspotter"
 version = "0.1.0"
 dependencies = [
  "futures-util",
+ "serde",
  "serde_json",
+ "thiserror",
  "tokio",
  "tokio-tungstenite 0.26.2",
  "trackaudio",
