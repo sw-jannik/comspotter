@@ -197,6 +197,12 @@ impl ChaseplaneClient {
         self.track_by_id(uid).await
     }
 
+    /// Enables or disables ChasePlane's auto-spot (automatically track whichever AI traffic is active).
+    pub async fn set_auto_target(&self, enabled: bool) -> Result<ApiReply> {
+        self.send_request("ai_traffic_auto_target_set", json!({ "enabled": enabled }))
+            .await
+    }
+
     /// Snapshot of all currently known AI traffic.
     pub fn traffic(&self) -> Vec<TrafficInfo> {
         self.traffic.lock().unwrap().values().cloned().collect()

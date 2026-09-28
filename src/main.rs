@@ -9,6 +9,8 @@ use chaseplane::ChaseplaneClient;
 
 /// Minimum continuous transmission time before a station is tracked in ChasePlane.
 const TRACK_THRESHOLD: Duration = Duration::from_millis(500);
+/// Idle time with no known traffic transmitting before ChasePlane's auto-spot is enabled.
+const AUTO_SPOT_THRESHOLD: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -16,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     tokio::try_join!(
         async {
-            trackaudio_interface::connect(chaseplane.clone(), TRACK_THRESHOLD)
+            trackaudio_interface::connect(chaseplane.clone(), TRACK_THRESHOLD, AUTO_SPOT_THRESHOLD)
                 .await
                 .map_err(|error| Box::new(error) as Box<dyn std::error::Error>)
         },
