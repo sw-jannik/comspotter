@@ -9,6 +9,9 @@ use trackaudio::Event;
 
 use crate::chaseplane::ChaseplaneClient;
 
+/// Repeated RX starts from the same callsign within this window are treated as duplicates.
+const RX_BEGIN_DEBOUNCE: Duration = Duration::from_millis(50);
+
 #[derive(Clone, Debug)]
 pub struct Options {
     pub track_threshold: Duration,
@@ -24,6 +27,8 @@ pub struct Options {
 pub struct AircraftTracker {
     chaseplane: Arc<ChaseplaneClient>,
     options: Options,
+    // Last accepted RX start per callsign, used to drop duplicate events.
+    last_rx_begin: HashMap<String, Instant>,
     // Pending threshold timers, keyed by callsign; aborted if RX ends before they fire.
     pending: HashMap<String, JoinHandle<()>>,
     // Pending auto-spot-enable timer, reset whenever known traffic transmits.
@@ -40,6 +45,7 @@ impl AircraftTracker {
             options,
             pending: HashMap::new(),
             auto_spot_timer: None,
+            last_rx_begin: HashMap::new(),
             last_scene_change: Arc::new(Mutex::new(None)),
         }
     }
@@ -48,7 +54,17 @@ impl AircraftTracker {
     pub fn handle_event(&mut self, event: Event) {
         match event {
             Event::RxBegin(rx) => {
+                // TrackAudio sometimes emits RxBegin twice in quick succession.
+                let now = Instant::now();
+                if let Some(last) = self.last_rx_begin.get(&rx.callsign)
+                    && now.duration_since(*last) < RX_BEGIN_DEBOUNCE
+                {
+                    return;
+                }
+
+                self.last_rx_begin.insert(rx.callsign.clone(), now);
                 println!("📻 RX Start: {} on {}", rx.callsign, rx.frequency);
+
                 self.on_rx_begin(&rx.callsign);
             }
             Event::RxEnd(rx) => {
