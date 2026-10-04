@@ -7,13 +7,19 @@ use trackaudio::Event;
 
 use crate::chaseplane::ChaseplaneClient;
 
+#[derive(Clone, Copy, Debug)]
+pub struct Options {
+    pub track_threshold: Duration,
+    pub auto_spot_threshold: Duration,
+    pub scene_change_threshold: Duration,
+}
+
 /// Tracks known aircraft in ChasePlane once their radio transmission has been sustained for
 /// `track_threshold`, and enables ChasePlane's auto-spot once `auto_spot_threshold` passes
 /// without any known traffic transmitting.
 pub struct AircraftTracker {
     chaseplane: Arc<ChaseplaneClient>,
-    track_threshold: Duration,
-    auto_spot_threshold: Duration,
+    options: Options,
     // Pending threshold timers, keyed by callsign; aborted if RX ends before they fire.
     pending: HashMap<String, JoinHandle<()>>,
     // Pending auto-spot-enable timer, reset whenever known traffic transmits.
@@ -21,15 +27,10 @@ pub struct AircraftTracker {
 }
 
 impl AircraftTracker {
-    pub fn new(
-        chaseplane: Arc<ChaseplaneClient>,
-        track_threshold: Duration,
-        auto_spot_threshold: Duration,
-    ) -> Self {
+    pub fn new(chaseplane: Arc<ChaseplaneClient>, options: Options) -> Self {
         Self {
             chaseplane,
-            track_threshold,
-            auto_spot_threshold,
+            options,
             pending: HashMap::new(),
             auto_spot_timer: None,
         }
@@ -70,7 +71,7 @@ impl AircraftTracker {
         }
 
         let chaseplane = self.chaseplane.clone();
-        let track_threshold = self.track_threshold;
+        let track_threshold = self.options.track_threshold;
         let owned_callsign = callsign.to_string();
         let handle = tokio::spawn(async move {
             tokio::time::sleep(track_threshold).await;
@@ -90,7 +91,7 @@ impl AircraftTracker {
                 handle.abort();
             }
             let chaseplane = self.chaseplane.clone();
-            let auto_spot_threshold = self.auto_spot_threshold;
+            let auto_spot_threshold = self.options.auto_spot_threshold;
             self.auto_spot_timer = Some(tokio::spawn(async move {
                 tokio::time::sleep(auto_spot_threshold).await;
                 enable_auto_spot(&chaseplane).await;
