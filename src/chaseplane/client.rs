@@ -74,7 +74,6 @@ impl ChaseplaneClient {
 
         let client = Arc::new(client);
         tokio::spawn(Self::read_loop(read, Arc::downgrade(&client)));
-        client.spawn_refresh_views();
 
         Ok(client)
     }
@@ -177,7 +176,11 @@ impl ChaseplaneClient {
             return Ok(());
         };
         let views = view::filter_views(parsed.payload.views, &icao, &self.view_theme);
-        println!("🎥 Loaded {} {} view(s) for {icao}", views.len(), self.view_theme);
+        println!(
+            "🎥 Loaded {} {} view(s) for {icao}",
+            views.len(),
+            self.view_theme
+        );
         *self.views.lock().unwrap() = views;
         Ok(())
     }

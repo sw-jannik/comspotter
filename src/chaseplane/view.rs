@@ -54,6 +54,8 @@ pub(crate) struct RawView {
     pub icao: String,
     #[serde(default)]
     pub profile_theme: String,
+    #[serde(default)]
+    pub skip_cycle: bool,
     pub position: RawPosition,
 }
 
@@ -64,10 +66,12 @@ pub(crate) struct RawPosition {
     pub z: f64,
 }
 
-/// Keeps only views for `icao` with the given profile theme.
+/// Keeps only views for `icao` with the given profile theme that aren't flagged `skip_cycle`.
 pub(crate) fn filter_views(raw: Vec<RawView>, icao: &str, theme: &str) -> Vec<View> {
     raw.into_iter()
-        .filter(|v| v.icao.eq_ignore_ascii_case(icao) && v.profile_theme == theme)
+        .filter(|v| {
+            v.icao.eq_ignore_ascii_case(icao) && v.profile_theme == theme && !v.skip_cycle
+        })
         .map(|v| View {
             guid: v.guid,
             name: v.name,
@@ -114,7 +118,8 @@ mod tests {
             {"name":"East Apron","icao":"EDDF","guid":"g1","profile_theme":"WORLD_TOWER",
              "position":{"x":8.58,"y":155.4,"z":50.05,"pitch":0,"yaw":0,"roll":0,"zoom":1}},
             {"name":"Other","icao":"EDDM","guid":"g2","profile_theme":"WORLD_TOWER","position":{"x":1,"y":2,"z":3}},
-            {"name":"Chase","icao":"EDDF","guid":"g3","profile_theme":"OTHER","position":{"x":1,"y":2,"z":3}}
+            {"name":"Chase","icao":"EDDF","guid":"g3","profile_theme":"OTHER","position":{"x":1,"y":2,"z":3}},
+            {"name":"Skipped","icao":"EDDF","guid":"g4","profile_theme":"WORLD_TOWER","skip_cycle":true,"position":{"x":1,"y":2,"z":3}}
             ]}}"#,
         )
         .unwrap();
