@@ -2,6 +2,7 @@
 name = "comspotter"
 version = "0.1.0-rc1"
 edition = "2024"
+license = "MIT"
 
 [dependencies]
 trackaudio = "0.3.0"
