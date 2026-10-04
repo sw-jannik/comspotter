@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
+use tokio::time::Instant;
 use trackaudio::Event;
 
 use crate::chaseplane::ChaseplaneClient;
@@ -24,6 +26,9 @@ pub struct AircraftTracker {
     pending: HashMap<String, JoinHandle<()>>,
     // Pending auto-spot-enable timer, reset whenever known traffic transmits.
     auto_spot_timer: Option<JoinHandle<()>>,
+    // Time of the last successful scene change. A track task holds the lock while it waits out
+    // the scene change cooldown, which serializes concurrent track attempts.
+    last_scene_change: Arc<Mutex<Option<Instant>>>,
 }
 
 impl AircraftTracker {
@@ -33,6 +38,7 @@ impl AircraftTracker {
             options,
             pending: HashMap::new(),
             auto_spot_timer: None,
+            last_scene_change: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -72,10 +78,19 @@ impl AircraftTracker {
 
         let chaseplane = self.chaseplane.clone();
         let track_threshold = self.options.track_threshold;
+        let scene_change_threshold = self.options.scene_change_threshold;
+        let last_scene_change = self.last_scene_change.clone();
         let owned_callsign = callsign.to_string();
         let handle = tokio::spawn(async move {
             tokio::time::sleep(track_threshold).await;
-            track_if_known(&chaseplane, &owned_callsign).await;
+            // The task is aborted on RX end, so the station is still transmitting here.
+            let mut last = last_scene_change.lock().await;
+            if let Some(at) = *last {
+                tokio::time::sleep_until(at + scene_change_threshold).await;
+            }
+            if track_if_known(&chaseplane, &owned_callsign).await {
+                *last = Some(Instant::now());
+            }
         });
         self.pending.insert(callsign.to_string(), handle);
     }
@@ -101,17 +116,24 @@ impl AircraftTracker {
 }
 
 /// Tracks `callsign` in ChasePlane if it's currently known AI traffic; no-op otherwise.
-async fn track_if_known(chaseplane: &ChaseplaneClient, callsign: &str) {
+/// Returns whether the track succeeded.
+async fn track_if_known(chaseplane: &ChaseplaneClient, callsign: &str) -> bool {
     let Some(traffic) = chaseplane.find_by_callsign(callsign) else {
-        return;
+        return false;
     };
 
     match chaseplane.track_by_id(traffic.uid).await {
-        Ok(_reply) => println!(
-            "🎯 Tracking {} after sustained transmission",
-            traffic.callsign
-        ),
-        Err(err) => eprintln!("🎯 Failed to track {}: {err}", traffic.callsign),
+        Ok(_reply) => {
+            println!(
+                "🎯 Tracking {} after sustained transmission",
+                traffic.callsign
+            );
+            true
+        }
+        Err(err) => {
+            eprintln!("🎯 Failed to track {}: {err}", traffic.callsign);
+            false
+        }
     }
 }
 
