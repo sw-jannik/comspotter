@@ -5,8 +5,10 @@ mod client;
 mod error;
 mod message;
 mod traffic;
+mod view;
 
-pub use client::ChaseplaneClient;
+pub use client::{ChaseplaneClient, DEFAULT_VIEW_THEME};
 pub use error::{Error, Result};
 pub use message::ApiReply;
 pub use traffic::TrafficInfo;
+pub use view::View;

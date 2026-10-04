@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = options::load();
     println!("Loaded options: {:?}", options);
 
-    let chaseplane = Arc::new(ChaseplaneClient::connect_default().await?);
+    let chaseplane = ChaseplaneClient::connect_default(&options.view_profile_theme).await?;
 
     tokio::try_join!(run_tracking(chaseplane.clone(), options))?;
 

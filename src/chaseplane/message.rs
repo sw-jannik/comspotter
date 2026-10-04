@@ -13,8 +13,17 @@ pub(crate) enum ServerMessage {
         status: u16,
         payload: serde_json::Value,
     },
+    AirportChanged {
+        payload: AirportChangedPayload,
+    },
     #[serde(other)]
     Other,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct AirportChangedPayload {
+    #[serde(rename = "activeIdent", default)]
+    pub active_ident: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

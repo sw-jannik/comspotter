@@ -9,11 +9,13 @@ use trackaudio::Event;
 
 use crate::chaseplane::ChaseplaneClient;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct Options {
     pub track_threshold: Duration,
     pub auto_spot_threshold: Duration,
     pub scene_change_threshold: Duration,
+    pub view_switching: bool,
+    pub view_profile_theme: String,
 }
 
 /// Tracks known aircraft in ChasePlane once their radio transmission has been sustained for
@@ -79,6 +81,7 @@ impl AircraftTracker {
         let chaseplane = self.chaseplane.clone();
         let track_threshold = self.options.track_threshold;
         let scene_change_threshold = self.options.scene_change_threshold;
+        let view_switching = self.options.view_switching;
         let last_scene_change = self.last_scene_change.clone();
         let owned_callsign = callsign.to_string();
         let handle = tokio::spawn(async move {
@@ -88,7 +91,7 @@ impl AircraftTracker {
             if let Some(at) = *last {
                 tokio::time::sleep_until(at + scene_change_threshold).await;
             }
-            if track_if_known(&chaseplane, &owned_callsign).await {
+            if track_if_known(&chaseplane, &owned_callsign, view_switching).await {
                 *last = Some(Instant::now());
             }
         });
@@ -115,9 +118,14 @@ impl AircraftTracker {
     }
 }
 
-/// Tracks `callsign` in ChasePlane if it's currently known AI traffic; no-op otherwise.
+/// Tracks `callsign` in ChasePlane if it's currently known AI traffic; no-op otherwise. If
+/// `view_switching` is set, also jumps to the closest saved view afterwards.
 /// Returns whether the track succeeded.
-async fn track_if_known(chaseplane: &ChaseplaneClient, callsign: &str) -> bool {
+async fn track_if_known(
+    chaseplane: &ChaseplaneClient,
+    callsign: &str,
+    view_switching: bool,
+) -> bool {
     let Some(traffic) = chaseplane.find_by_callsign(callsign) else {
         return false;
     };
@@ -128,12 +136,40 @@ async fn track_if_known(chaseplane: &ChaseplaneClient, callsign: &str) -> bool {
                 "🎯 Tracking {} after sustained transmission",
                 traffic.callsign
             );
+            if view_switching {
+                switch_to_closest_view(chaseplane, callsign).await;
+            }
             true
         }
         Err(err) => {
             eprintln!("🎯 Failed to track {}: {err}", traffic.callsign);
             false
         }
+    }
+}
+
+/// Switches to the saved view closest to the aircraft's latest known position.
+async fn switch_to_closest_view(chaseplane: &ChaseplaneClient, callsign: &str) {
+    // Re-read the traffic entry: the position may have been updated while tracking.
+    let Some(traffic) = chaseplane.find_by_callsign(callsign) else {
+        return;
+    };
+    let Some(view) = chaseplane.closest_view(traffic.lat, traffic.lon) else {
+        return;
+    };
+
+    match chaseplane.set_view_by_guid(&view.guid).await {
+        Ok(reply) if reply.is_success() => {
+            println!(
+                "🎥 Switched to view \"{}\" for {}",
+                view.name, traffic.callsign
+            )
+        }
+        Ok(reply) => eprintln!(
+            "🎥 Failed to switch to view \"{}\": status {}",
+            view.name, reply.status
+        ),
+        Err(err) => eprintln!("🎥 Failed to switch to view \"{}\": {err}", view.name),
     }
 }
 

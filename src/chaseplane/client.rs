@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::{Arc, Mutex as StdMutex, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use futures_util::stream::{SplitSink, SplitStream};
@@ -14,10 +14,12 @@ use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungsten
 use super::error::{Error, Result};
 use super::message::{ApiReply, ServerMessage};
 use super::traffic::TrafficInfo;
+use super::view::{self, GetViewsReply, View};
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 const DEFAULT_URL: &str = "ws://127.0.0.1:8652/";
+pub const DEFAULT_VIEW_THEME: &str = "WORLD_TOWER";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// A connection to ChasePlane's websocket API, tracking known AI traffic and
@@ -27,14 +29,20 @@ pub struct ChaseplaneClient {
     traffic: Arc<StdMutex<HashMap<u64, TrafficInfo>>>,
     pending: Arc<StdMutex<HashMap<String, oneshot::Sender<ApiReply>>>>,
     request_counter: AtomicU64,
+    // ICAO of the airport currently active in ChasePlane, from `airport_changed`.
+    active_icao: StdMutex<Option<String>>,
+    // Saved views for the active airport and configured theme only.
+    views: StdMutex<Vec<View>>,
+    view_theme: String,
 }
 
 impl ChaseplaneClient {
-    pub async fn connect_default() -> Result<Self> {
-        Self::connect(DEFAULT_URL).await
+    pub async fn connect_default(view_theme: &str) -> Result<Arc<Self>> {
+        Self::connect(DEFAULT_URL, view_theme).await
     }
 
-    pub async fn connect(url: &str) -> Result<Self> {
+    /// Only views whose `profile_theme` equals `view_theme` are kept.
+    pub async fn connect(url: &str, view_theme: &str) -> Result<Arc<Self>> {
         let (socket, _) = connect_async(url).await?;
         let (write, read) = socket.split();
 
@@ -43,6 +51,9 @@ impl ChaseplaneClient {
             traffic: Arc::new(StdMutex::new(HashMap::new())),
             pending: Arc::new(StdMutex::new(HashMap::new())),
             request_counter: AtomicU64::new(0),
+            active_icao: StdMutex::new(None),
+            views: StdMutex::new(Vec::new()),
+            view_theme: view_theme.to_string(),
         };
 
         client
@@ -61,20 +72,14 @@ impl ChaseplaneClient {
             }))
             .await?;
 
-        tokio::spawn(Self::read_loop(
-            read,
-            client.traffic.clone(),
-            client.pending.clone(),
-        ));
+        let client = Arc::new(client);
+        tokio::spawn(Self::read_loop(read, Arc::downgrade(&client)));
+        client.spawn_refresh_views();
 
         Ok(client)
     }
 
-    async fn read_loop(
-        mut read: SplitStream<WsStream>,
-        traffic: Arc<StdMutex<HashMap<u64, TrafficInfo>>>,
-        pending: Arc<StdMutex<HashMap<String, oneshot::Sender<ApiReply>>>>,
-    ) {
+    async fn read_loop(mut read: SplitStream<WsStream>, client: Weak<Self>) {
         while let Some(message) = read.next().await {
             let message = match message {
                 Ok(message) => message,
@@ -84,21 +89,22 @@ impl ChaseplaneClient {
                 }
             };
 
+            let Some(client) = client.upgrade() else {
+                return;
+            };
             match message {
-                Message::Text(text) => Self::handle_text(&text, &traffic, &pending),
+                Message::Text(text) => client.handle_text(&text),
                 Message::Close(_) => break,
                 _ => {}
             }
         }
         // Unblock any in-flight track_by_id/track_by_callsign calls with ReaderTaskEnded.
-        pending.lock().unwrap().clear();
+        if let Some(client) = client.upgrade() {
+            client.pending.lock().unwrap().clear();
+        }
     }
 
-    fn handle_text(
-        text: &str,
-        traffic: &StdMutex<HashMap<u64, TrafficInfo>>,
-        pending: &StdMutex<HashMap<String, oneshot::Sender<ApiReply>>>,
-    ) {
+    fn handle_text(self: &Arc<Self>, text: &str) {
         let message: ServerMessage = match serde_json::from_str(text) {
             Ok(message) => message,
             Err(err) => {
@@ -109,7 +115,7 @@ impl ChaseplaneClient {
 
         match message {
             ServerMessage::AiTraffic { payload } => {
-                let mut traffic = traffic.lock().unwrap();
+                let mut traffic = self.traffic.lock().unwrap();
                 for entry in payload.added.into_iter().chain(payload.updated) {
                     traffic.insert(entry.uid, entry);
                 }
@@ -122,7 +128,7 @@ impl ChaseplaneClient {
                 status,
                 payload,
             } => {
-                if let Some(sender) = pending.lock().unwrap().remove(&request_id) {
+                if let Some(sender) = self.pending.lock().unwrap().remove(&request_id) {
                     let _ = sender.send(ApiReply {
                         request_id,
                         status,
@@ -130,8 +136,66 @@ impl ChaseplaneClient {
                     });
                 }
             }
+            ServerMessage::AirportChanged { payload } => {
+                let Some(ident) = payload.active_ident.filter(|ident| !ident.is_empty()) else {
+                    return;
+                };
+                {
+                    let mut active = self.active_icao.lock().unwrap();
+                    if active.as_deref() != Some(ident.as_str()) {
+                        println!("🛫 Active airport: {ident}");
+                        self.views.lock().unwrap().clear();
+                    }
+                    *active = Some(ident);
+                }
+                self.spawn_refresh_views();
+            }
             ServerMessage::Other => {}
         }
+    }
+
+    fn spawn_refresh_views(self: &Arc<Self>) {
+        let client = self.clone();
+        tokio::spawn(async move {
+            if let Err(err) = client.refresh_views().await {
+                eprintln!("chaseplane: failed to load views: {err}");
+            }
+        });
+    }
+
+    /// Fetches all views from ChasePlane and keeps those for the active airport and configured theme.
+    /// If the airport isn't known yet, nothing is kept; the next `airport_changed` refreshes again.
+    pub async fn refresh_views(&self) -> Result<()> {
+        let reply = self.send_request("get_views", json!({})).await?;
+        if !reply.is_success() {
+            eprintln!("chaseplane: get_views failed with status {}", reply.status);
+            return Ok(());
+        }
+        let parsed: GetViewsReply = serde_json::from_value(reply.payload)?;
+
+        let Some(icao) = self.active_icao.lock().unwrap().clone() else {
+            return Ok(());
+        };
+        let views = view::filter_views(parsed.payload.views, &icao, &self.view_theme);
+        println!("🎥 Loaded {} {} view(s) for {icao}", views.len(), self.view_theme);
+        *self.views.lock().unwrap() = views;
+        Ok(())
+    }
+
+    /// Switches ChasePlane to the saved view with the given guid.
+    pub async fn set_view_by_guid(&self, guid: &str) -> Result<ApiReply> {
+        self.send_request("set_view_by_guid", json!({ "guid": guid }))
+            .await
+    }
+
+    /// The saved view (active airport, configured theme) closest horizontally to the given position.
+    pub fn closest_view(&self, lat: f64, lon: f64) -> Option<View> {
+        view::closest(&self.views.lock().unwrap(), lat, lon).cloned()
+    }
+
+    /// Snapshot of the saved views for the active airport.
+    pub fn views(&self) -> Vec<View> {
+        self.views.lock().unwrap().clone()
     }
 
     fn next_request_id(&self, command: &str) -> String {

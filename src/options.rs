@@ -1,12 +1,13 @@
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::chaseplane::DEFAULT_VIEW_THEME;
 use crate::tracking::Options;
 
 const FILE_NAME: &str = "comspotter.options.toml";
+const DEFAULT_VIEW_SWITCHING: bool = false;
 
 struct Entry {
     key: &'static str,
@@ -32,6 +33,11 @@ const ENTRIES: [Entry; 3] = [
     },
 ];
 
+const VIEW_SWITCHING_KEY: &str = "view_switching";
+const VIEW_SWITCHING_DESCRIPTION: &str = "After tracking a station, also switch to the saved ChasePlane view (active airport) closest to the aircraft.";
+const VIEW_THEME_KEY: &str = "view_profile_theme";
+const VIEW_THEME_DESCRIPTION: &str = "Only ChasePlane views with this profile_theme are used for view switching.";
+
 fn options_path() -> io::Result<PathBuf> {
     let exe = std::env::current_exe()?;
     let dir = exe
@@ -45,24 +51,23 @@ fn default_contents() -> String {
     for e in &ENTRIES {
         out.push_str(&format!("\n# {}\n{} = {}\n", e.description, e.key, e.default_ms));
     }
+    out.push_str(&format!(
+        "\n# {VIEW_SWITCHING_DESCRIPTION}\n{VIEW_SWITCHING_KEY} = {DEFAULT_VIEW_SWITCHING}\n"
+    ));
+    out.push_str(&format!(
+        "\n# {VIEW_THEME_DESCRIPTION}\n{VIEW_THEME_KEY} = \"{DEFAULT_VIEW_THEME}\"\n"
+    ));
     out
 }
 
-fn parse(contents: &str) -> HashMap<String, u64> {
-    let table = match contents.parse::<toml::Table>() {
+fn parse(contents: &str) -> toml::Table {
+    match contents.parse::<toml::Table>() {
         Ok(table) => table,
         Err(e) => {
             eprintln!("Invalid options file, using defaults: {e}");
-            return HashMap::new();
+            toml::Table::new()
         }
-    };
-    table
-        .into_iter()
-        .filter_map(|(key, value)| {
-            let ms = value.as_integer().and_then(|v| u64::try_from(v).ok())?;
-            Some((key, ms))
-        })
-        .collect()
+    }
 }
 
 /// Loads options from the file next to the executable, creating it with defaults if missing.
@@ -75,27 +80,72 @@ pub fn load() -> Options {
                 if let Err(e) = fs::write(&path, default_contents()) {
                     eprintln!("Could not create options file {}: {e}", path.display());
                 }
-                HashMap::new()
+                toml::Table::new()
             }
             Err(e) => {
                 eprintln!("Could not read options file {}: {e}", path.display());
-                HashMap::new()
+                toml::Table::new()
             }
         },
         Err(e) => {
             eprintln!("Could not locate options file: {e}");
-            HashMap::new()
+            toml::Table::new()
         }
     };
 
+    from_table(&values)
+}
+
+fn from_table(values: &toml::Table) -> Options {
     let get = |index: usize| {
         let e = &ENTRIES[index];
-        Duration::from_millis(values.get(e.key).copied().unwrap_or(e.default_ms))
+        let ms = values
+            .get(e.key)
+            .and_then(|v| v.as_integer())
+            .and_then(|v| u64::try_from(v).ok())
+            .unwrap_or(e.default_ms);
+        Duration::from_millis(ms)
     };
 
     Options {
         track_threshold: get(0),
         auto_spot_threshold: get(1),
         scene_change_threshold: get(2),
+        view_switching: values
+            .get(VIEW_SWITCHING_KEY)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(DEFAULT_VIEW_SWITCHING),
+        view_profile_theme: values
+            .get(VIEW_THEME_KEY)
+            .and_then(|v| v.as_str())
+            .map(str::to_string)
+            .unwrap_or_else(|| DEFAULT_VIEW_THEME.to_string()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn defaults_when_keys_missing() {
+        let o = from_table(&parse(""));
+        assert!(!o.view_switching);
+        assert_eq!(o.view_profile_theme, "WORLD_TOWER");
+        assert_eq!(o.track_threshold, Duration::from_millis(500));
+    }
+
+    #[test]
+    fn reads_values_and_default_file_round_trips() {
+        let o = from_table(&parse(
+            "view_switching = true\nview_profile_theme = \"CUSTOM\"\ntrack_threshold_ms = 100",
+        ));
+        assert!(o.view_switching);
+        assert_eq!(o.view_profile_theme, "CUSTOM");
+        assert_eq!(o.track_threshold, Duration::from_millis(100));
+
+        let d = from_table(&parse(&default_contents()));
+        assert!(!d.view_switching);
+        assert_eq!(d.view_profile_theme, "WORLD_TOWER");
     }
 }
