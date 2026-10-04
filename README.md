@@ -22,6 +22,7 @@ Options live in `comspotter.options.toml` next to the executable, grouped into t
 |--------|---------|-------------|
 | `url` | `"ws://127.0.0.1:8652/"` | WebSocket URL of the ChasePlane API. |
 | `view_switching` | `false` | After tracking a station, also switch to the saved ChasePlane view (of the active airport) closest to the aircraft. |
+| `force_view_switch` | `false` | By default no switch happens if the closest view is already the current one. Set to `true` to switch anyway which will cause a cut like transition rather than a smooth pan. |
 | `view_profile_theme` | `"WORLD_TOWER"` | Only ChasePlane views with this profile theme are used for view switching. `WORLD_TOWER` corresponds to the default "Tower" Group in ChasePlane |
 
 ### [trackaudio]

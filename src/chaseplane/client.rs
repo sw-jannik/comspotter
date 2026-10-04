@@ -33,6 +33,8 @@ pub struct ChaseplaneClient {
     active_icao: StdMutex<Option<String>>,
     // Saved views for the active airport and configured theme only.
     views: StdMutex<Vec<View>>,
+    // GUID of the view last switched to by us; reset when the active airport changes.
+    current_view: StdMutex<Option<String>>,
     view_theme: String,
 }
 
@@ -49,6 +51,7 @@ impl ChaseplaneClient {
             request_counter: AtomicU64::new(0),
             active_icao: StdMutex::new(None),
             views: StdMutex::new(Vec::new()),
+            current_view: StdMutex::new(None),
             view_theme: view_theme.to_string(),
         };
 
@@ -140,6 +143,7 @@ impl ChaseplaneClient {
                     if active.as_deref() != Some(ident.as_str()) {
                         println!("🛫 Active airport: {ident}");
                         self.views.lock().unwrap().clear();
+                        *self.current_view.lock().unwrap() = None;
                     }
                     *active = Some(ident);
                 }
@@ -182,9 +186,20 @@ impl ChaseplaneClient {
     }
 
     /// Switches ChasePlane to the saved view with the given guid.
+    /// On success the view is remembered as the current one.
     pub async fn set_view_by_guid(&self, guid: &str) -> Result<ApiReply> {
-        self.send_request("set_view_by_guid", json!({ "guid": guid }))
-            .await
+        let reply = self
+            .send_request("set_view_by_guid", json!({ "guid": guid }))
+            .await?;
+        if reply.is_success() {
+            *self.current_view.lock().unwrap() = Some(guid.to_string());
+        }
+        Ok(reply)
+    }
+
+    /// GUID of the view last switched to via `set_view_by_guid`, if any.
+    pub fn current_view(&self) -> Option<String> {
+        self.current_view.lock().unwrap().clone()
     }
 
     /// The saved view (active airport, configured theme) closest horizontally to the given position.

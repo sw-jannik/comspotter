@@ -19,6 +19,7 @@ pub struct Options {
 pub struct ChaseplaneOptions {
     pub url: String,
     pub view_switching: bool,
+    pub force_view_switch: bool,
     pub view_profile_theme: String,
 }
 
@@ -40,6 +41,7 @@ impl Default for Options {
             chaseplane: ChaseplaneOptions {
                 url: DEFAULT_CHASEPLANE_URL.to_string(),
                 view_switching: false,
+                force_view_switch: false,
                 view_profile_theme: DEFAULT_VIEW_THEME.to_string(),
             },
             trackaudio: TrackAudioOptions {
@@ -75,6 +77,9 @@ url = "{chaseplane_url}"
 # After tracking a station, also switch to the saved ChasePlane view (active airport) closest to the aircraft.
 view_switching = {view_switching}
 
+# Switch to the closest view even if it is already the current one.
+force_view_switch = {force_view_switch}
+
 # Only ChasePlane views with this profile_theme are used for view switching.
 view_profile_theme = "{view_profile_theme}"
 
@@ -94,6 +99,7 @@ scene_change_threshold_ms = {scene_change}
 "#,
         chaseplane_url = d.chaseplane.url,
         view_switching = d.chaseplane.view_switching,
+        force_view_switch = d.chaseplane.force_view_switch,
         view_profile_theme = d.chaseplane.view_profile_theme,
         trackaudio_url = d.trackaudio.url,
         track = ms(d.tracking.track_threshold),
@@ -178,6 +184,11 @@ fn from_table(values: &toml::Table) -> Options {
         chaseplane: ChaseplaneOptions {
             url: string_or(chaseplane, "url", &d.chaseplane.url),
             view_switching: bool_or(chaseplane, "view_switching", d.chaseplane.view_switching),
+            force_view_switch: bool_or(
+                chaseplane,
+                "force_view_switch",
+                d.chaseplane.force_view_switch,
+            ),
             view_profile_theme: string_or(
                 chaseplane,
                 "view_profile_theme",

@@ -90,6 +90,7 @@ impl AircraftTracker {
         let track_threshold = self.options.tracking.track_threshold;
         let scene_change_threshold = self.options.tracking.scene_change_threshold;
         let view_switching = self.options.chaseplane.view_switching;
+        let force_view_switch = self.options.chaseplane.force_view_switch;
         let last_scene_change = self.last_scene_change.clone();
         let owned_callsign = callsign.to_string();
         let handle = tokio::spawn(async move {
@@ -99,7 +100,14 @@ impl AircraftTracker {
             if let Some(at) = *last {
                 tokio::time::sleep_until(at + scene_change_threshold).await;
             }
-            if track_if_known(&chaseplane, &owned_callsign, view_switching).await {
+            if track_if_known(
+                &chaseplane,
+                &owned_callsign,
+                view_switching,
+                force_view_switch,
+            )
+            .await
+            {
                 *last = Some(Instant::now());
             }
         });
@@ -127,12 +135,14 @@ impl AircraftTracker {
 }
 
 /// Tracks `callsign` in ChasePlane if it's currently known AI traffic; no-op otherwise. If
-/// `view_switching` is set, also jumps to the closest saved view afterwards.
+/// `view_switching` is set, also jumps to the closest saved view afterwards (see
+/// `switch_to_closest_view` for `force_view_switch`).
 /// Returns whether the track succeeded.
 async fn track_if_known(
     chaseplane: &ChaseplaneClient,
     callsign: &str,
     view_switching: bool,
+    force_view_switch: bool,
 ) -> bool {
     let Some(traffic) = chaseplane.find_by_callsign(callsign) else {
         return false;
@@ -145,7 +155,7 @@ async fn track_if_known(
                 traffic.callsign
             );
             if view_switching {
-                switch_to_closest_view(chaseplane, callsign).await;
+                switch_to_closest_view(chaseplane, callsign, force_view_switch).await;
             }
             true
         }
@@ -156,8 +166,9 @@ async fn track_if_known(
     }
 }
 
-/// Switches to the saved view closest to the aircraft's latest known position.
-async fn switch_to_closest_view(chaseplane: &ChaseplaneClient, callsign: &str) {
+/// Switches to the saved view closest to the aircraft's latest known position. Does nothing if
+/// that view is already the current one, unless `force` is set.
+async fn switch_to_closest_view(chaseplane: &ChaseplaneClient, callsign: &str, force: bool) {
     // Re-read the traffic entry: the position may have been updated while tracking.
     let Some(traffic) = chaseplane.find_by_callsign(callsign) else {
         return;
@@ -165,6 +176,10 @@ async fn switch_to_closest_view(chaseplane: &ChaseplaneClient, callsign: &str) {
     let Some(view) = chaseplane.closest_view(traffic.lat, traffic.lon) else {
         return;
     };
+
+    if !force && chaseplane.current_view().as_deref() == Some(view.guid.as_str()) {
+        return;
+    }
 
     match chaseplane.set_view_by_guid(&view.guid).await {
         Ok(reply) if reply.is_success() => {
