@@ -2,6 +2,13 @@
 
 ComSpotter watches radio activity in [TrackAudio](https://github.com/pierr3/TrackAudio) and makes [ChasePlane](https://parallel42.com/products/chaseplane) automatically track the aircraft that is transmitting in Microsoft Flight Simulator 2024. When nobody is talking for a while, it re-enables ChasePlane's auto-spot. Optionally, it also switches to the saved tower view closest to the aircraft.
 
+## Watch a demo
+
+Check out this video to see what ComSpotter does. Not a single user input required.
+On the left you'll see the ChasePlanes spotting interface and ComSpotters log so you can see what's happening behind the scenes.
+
+[![Watch a demo](https://img.youtube.com/vi/6AYqGIecpmw/hqdefault.jpg)](https://www.youtube.com/watch?v=6AYqGIecpmw)
+
 ## Quick start
 
 1. Start Euroscope and connect to Vatsim as a controller or observer. You need to use the TrackAudio client. 
@@ -45,7 +52,7 @@ Options live in `comspotter.options.toml` next to the executable, grouped into t
 
 - Set up a fixed tower view, or several, for use with the `view_switching` option. For example place cameras directly above the control tower and apron control towers, if there are multiple and save them all in the Tower group. With `view_switching = true` ChasePlane will switch to the closest camera to the transmitting aircraft.
 - By default the ChasePlane tower view group (`WORLD_TOWER`) is used. This can be changed with `view_profile_theme` in the options.
-- A view with **"Skip when cycle view"** active is not used.
+- A view with **"Skip when cycling views"** active is not used.
 
 ### AutoFPS and MSFS graphics settings
 
