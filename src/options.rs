@@ -3,7 +3,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use crate::chaseplane::DEFAULT_VIEW_THEME;
+use crate::chaseplane::{DEFAULT_URL as DEFAULT_CHASEPLANE_URL, DEFAULT_VIEW_THEME};
+use crate::trackaudio::DEFAULT_URL as DEFAULT_TRACKAUDIO_URL;
 use crate::tracking::Options;
 
 const FILE_NAME: &str = "comspotter.options.toml";
@@ -36,7 +37,14 @@ const ENTRIES: [Entry; 3] = [
 const VIEW_SWITCHING_KEY: &str = "view_switching";
 const VIEW_SWITCHING_DESCRIPTION: &str = "After tracking a station, also switch to the saved ChasePlane view (active airport) closest to the aircraft.";
 const VIEW_THEME_KEY: &str = "view_profile_theme";
-const VIEW_THEME_DESCRIPTION: &str = "Only ChasePlane views with this profile_theme are used for view switching.";
+const VIEW_THEME_DESCRIPTION: &str =
+    "Only ChasePlane views with this profile_theme are used for view switching.";
+
+const CHASEPLANE_URL_KEY: &str = "chaseplane_url";
+const CHASEPLANE_URL_DESCRIPTION: &str = "WebSocket URL of the ChasePlane API.";
+const TRACKAUDIO_URL_KEY: &str = "trackaudio_url";
+const TRACKAUDIO_URL_DESCRIPTION: &str =
+    "WebSocket URL of the TrackAudio instance (host, host:port or full URL).";
 
 fn options_path() -> io::Result<PathBuf> {
     let exe = std::env::current_exe()?;
@@ -49,13 +57,22 @@ fn options_path() -> io::Result<PathBuf> {
 fn default_contents() -> String {
     let mut out = String::from("# ComSpotter options. All durations are in milliseconds.\n");
     for e in &ENTRIES {
-        out.push_str(&format!("\n# {}\n{} = {}\n", e.description, e.key, e.default_ms));
+        out.push_str(&format!(
+            "\n# {}\n{} = {}\n",
+            e.description, e.key, e.default_ms
+        ));
     }
     out.push_str(&format!(
         "\n# {VIEW_SWITCHING_DESCRIPTION}\n{VIEW_SWITCHING_KEY} = {DEFAULT_VIEW_SWITCHING}\n"
     ));
     out.push_str(&format!(
         "\n# {VIEW_THEME_DESCRIPTION}\n{VIEW_THEME_KEY} = \"{DEFAULT_VIEW_THEME}\"\n"
+    ));
+    out.push_str(&format!(
+        "\n# {CHASEPLANE_URL_DESCRIPTION}\n{CHASEPLANE_URL_KEY} = \"{DEFAULT_CHASEPLANE_URL}\"\n"
+    ));
+    out.push_str(&format!(
+        "\n# {TRACKAUDIO_URL_DESCRIPTION}\n{TRACKAUDIO_URL_KEY} = \"{DEFAULT_TRACKAUDIO_URL}\"\n"
     ));
     out
 }
@@ -96,6 +113,16 @@ pub fn load() -> Options {
     from_table(&values)
 }
 
+fn string_or(values: &toml::Table, key: &str, default: &str) -> String {
+    values
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default)
+        .to_string()
+}
+
 fn from_table(values: &toml::Table) -> Options {
     let get = |index: usize| {
         let e = &ENTRIES[index];
@@ -120,6 +147,8 @@ fn from_table(values: &toml::Table) -> Options {
             .and_then(|v| v.as_str())
             .map(str::to_string)
             .unwrap_or_else(|| DEFAULT_VIEW_THEME.to_string()),
+        chaseplane_url: string_or(values, CHASEPLANE_URL_KEY, DEFAULT_CHASEPLANE_URL),
+        trackaudio_url: string_or(values, TRACKAUDIO_URL_KEY, DEFAULT_TRACKAUDIO_URL),
     }
 }
 
@@ -133,6 +162,17 @@ mod tests {
         assert!(!o.view_switching);
         assert_eq!(o.view_profile_theme, "WORLD_TOWER");
         assert_eq!(o.track_threshold, Duration::from_millis(500));
+        assert_eq!(o.chaseplane_url, "ws://127.0.0.1:8652/");
+        assert_eq!(o.trackaudio_url, "ws://127.0.0.1:49080/ws");
+    }
+
+    #[test]
+    fn reads_custom_urls() {
+        let o = from_table(&parse(
+            "chaseplane_url = \"ws://192.168.1.5:8652/\"\ntrackaudio_url = \"192.168.1.6\"",
+        ));
+        assert_eq!(o.chaseplane_url, "ws://192.168.1.5:8652/");
+        assert_eq!(o.trackaudio_url, "192.168.1.6");
     }
 
     #[test]

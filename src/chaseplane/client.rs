@@ -18,7 +18,7 @@ use super::view::{self, GetViewsReply, View};
 
 type WsStream = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
-const DEFAULT_URL: &str = "ws://127.0.0.1:8652/";
+pub const DEFAULT_URL: &str = "ws://127.0.0.1:8652/";
 pub const DEFAULT_VIEW_THEME: &str = "WORLD_TOWER";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -37,10 +37,6 @@ pub struct ChaseplaneClient {
 }
 
 impl ChaseplaneClient {
-    pub async fn connect_default(view_theme: &str) -> Result<Arc<Self>> {
-        Self::connect(DEFAULT_URL, view_theme).await
-    }
-
     /// Only views whose `profile_theme` equals `view_theme` are kept.
     pub async fn connect(url: &str, view_theme: &str) -> Result<Arc<Self>> {
         let (socket, _) = connect_async(url).await?;

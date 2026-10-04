@@ -19,6 +19,8 @@ pub struct Options {
     pub scene_change_threshold: Duration,
     pub view_switching: bool,
     pub view_profile_theme: String,
+    pub chaseplane_url: String,
+    pub trackaudio_url: String,
 }
 
 /// Tracks known aircraft in ChasePlane once their radio transmission has been sustained for
