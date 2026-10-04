@@ -8,20 +8,10 @@ use tokio::time::Instant;
 use trackaudio::Event;
 
 use crate::chaseplane::ChaseplaneClient;
+use crate::options::Options;
 
 /// Repeated RX starts from the same callsign within this window are treated as duplicates.
 const RX_BEGIN_DEBOUNCE: Duration = Duration::from_millis(50);
-
-#[derive(Clone, Debug)]
-pub struct Options {
-    pub track_threshold: Duration,
-    pub auto_spot_threshold: Duration,
-    pub scene_change_threshold: Duration,
-    pub view_switching: bool,
-    pub view_profile_theme: String,
-    pub chaseplane_url: String,
-    pub trackaudio_url: String,
-}
 
 /// Tracks known aircraft in ChasePlane once their radio transmission has been sustained for
 /// `track_threshold`, and enables ChasePlane's auto-spot once `auto_spot_threshold` passes
@@ -97,9 +87,9 @@ impl AircraftTracker {
         }
 
         let chaseplane = self.chaseplane.clone();
-        let track_threshold = self.options.track_threshold;
-        let scene_change_threshold = self.options.scene_change_threshold;
-        let view_switching = self.options.view_switching;
+        let track_threshold = self.options.tracking.track_threshold;
+        let scene_change_threshold = self.options.tracking.scene_change_threshold;
+        let view_switching = self.options.chaseplane.view_switching;
         let last_scene_change = self.last_scene_change.clone();
         let owned_callsign = callsign.to_string();
         let handle = tokio::spawn(async move {
@@ -127,7 +117,7 @@ impl AircraftTracker {
                 handle.abort();
             }
             let chaseplane = self.chaseplane.clone();
-            let auto_spot_threshold = self.options.auto_spot_threshold;
+            let auto_spot_threshold = self.options.tracking.auto_spot_threshold;
             self.auto_spot_timer = Some(tokio::spawn(async move {
                 tokio::time::sleep(auto_spot_threshold).await;
                 enable_auto_spot(&chaseplane).await;

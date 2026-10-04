@@ -5,46 +5,54 @@ use std::time::Duration;
 
 use crate::chaseplane::{DEFAULT_URL as DEFAULT_CHASEPLANE_URL, DEFAULT_VIEW_THEME};
 use crate::trackaudio::DEFAULT_URL as DEFAULT_TRACKAUDIO_URL;
-use crate::tracking::Options;
 
 const FILE_NAME: &str = "comspotter.options.toml";
-const DEFAULT_VIEW_SWITCHING: bool = false;
 
-struct Entry {
-    key: &'static str,
-    default_ms: u64,
-    description: &'static str,
+#[derive(Clone, Debug)]
+pub struct Options {
+    pub chaseplane: ChaseplaneOptions,
+    pub trackaudio: TrackAudioOptions,
+    pub tracking: TrackingOptions,
 }
 
-const ENTRIES: [Entry; 3] = [
-    Entry {
-        key: "track_threshold_ms",
-        default_ms: 500,
-        description: "Minimum continuous transmission time before a station is tracked in ChasePlane.",
-    },
-    Entry {
-        key: "auto_spot_threshold_ms",
-        default_ms: 10_000,
-        description: "Idle time with no known traffic transmitting before ChasePlane's auto-spot is enabled.",
-    },
-    Entry {
-        key: "scene_change_threshold_ms",
-        default_ms: 5_000,
-        description: "Minimum time between scene change events.",
-    },
-];
+#[derive(Clone, Debug)]
+pub struct ChaseplaneOptions {
+    pub url: String,
+    pub view_switching: bool,
+    pub view_profile_theme: String,
+}
 
-const VIEW_SWITCHING_KEY: &str = "view_switching";
-const VIEW_SWITCHING_DESCRIPTION: &str = "After tracking a station, also switch to the saved ChasePlane view (active airport) closest to the aircraft.";
-const VIEW_THEME_KEY: &str = "view_profile_theme";
-const VIEW_THEME_DESCRIPTION: &str =
-    "Only ChasePlane views with this profile_theme are used for view switching.";
+#[derive(Clone, Debug)]
+pub struct TrackAudioOptions {
+    pub url: String,
+}
 
-const CHASEPLANE_URL_KEY: &str = "chaseplane_url";
-const CHASEPLANE_URL_DESCRIPTION: &str = "WebSocket URL of the ChasePlane API.";
-const TRACKAUDIO_URL_KEY: &str = "trackaudio_url";
-const TRACKAUDIO_URL_DESCRIPTION: &str =
-    "WebSocket URL of the TrackAudio instance (host, host:port or full URL).";
+#[derive(Clone, Debug)]
+pub struct TrackingOptions {
+    pub track_threshold: Duration,
+    pub auto_spot_threshold: Duration,
+    pub scene_change_threshold: Duration,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self {
+            chaseplane: ChaseplaneOptions {
+                url: DEFAULT_CHASEPLANE_URL.to_string(),
+                view_switching: false,
+                view_profile_theme: DEFAULT_VIEW_THEME.to_string(),
+            },
+            trackaudio: TrackAudioOptions {
+                url: DEFAULT_TRACKAUDIO_URL.to_string(),
+            },
+            tracking: TrackingOptions {
+                track_threshold: Duration::from_millis(500),
+                auto_spot_threshold: Duration::from_millis(10_000),
+                scene_change_threshold: Duration::from_millis(5_000),
+            },
+        }
+    }
+}
 
 fn options_path() -> io::Result<PathBuf> {
     let exe = std::env::current_exe()?;
@@ -55,26 +63,43 @@ fn options_path() -> io::Result<PathBuf> {
 }
 
 fn default_contents() -> String {
-    let mut out = String::from("# ComSpotter options. All durations are in milliseconds.\n");
-    for e in &ENTRIES {
-        out.push_str(&format!(
-            "\n# {}\n{} = {}\n",
-            e.description, e.key, e.default_ms
-        ));
-    }
-    out.push_str(&format!(
-        "\n# {VIEW_SWITCHING_DESCRIPTION}\n{VIEW_SWITCHING_KEY} = {DEFAULT_VIEW_SWITCHING}\n"
-    ));
-    out.push_str(&format!(
-        "\n# {VIEW_THEME_DESCRIPTION}\n{VIEW_THEME_KEY} = \"{DEFAULT_VIEW_THEME}\"\n"
-    ));
-    out.push_str(&format!(
-        "\n# {CHASEPLANE_URL_DESCRIPTION}\n{CHASEPLANE_URL_KEY} = \"{DEFAULT_CHASEPLANE_URL}\"\n"
-    ));
-    out.push_str(&format!(
-        "\n# {TRACKAUDIO_URL_DESCRIPTION}\n{TRACKAUDIO_URL_KEY} = \"{DEFAULT_TRACKAUDIO_URL}\"\n"
-    ));
-    out
+    let d = Options::default();
+    let ms = |d: Duration| d.as_millis();
+    format!(
+        r#"# ComSpotter options. All durations are in milliseconds.
+
+[chaseplane]
+# WebSocket URL of the ChasePlane API.
+url = "{chaseplane_url}"
+
+# After tracking a station, also switch to the saved ChasePlane view (active airport) closest to the aircraft.
+view_switching = {view_switching}
+
+# Only ChasePlane views with this profile_theme are used for view switching.
+view_profile_theme = "{view_profile_theme}"
+
+[trackaudio]
+# WebSocket URL of the TrackAudio instance (host, host:port or full URL).
+url = "{trackaudio_url}"
+
+[tracking]
+# Minimum continuous transmission time before a station is tracked in ChasePlane.
+track_threshold_ms = {track}
+
+# Idle time with no known traffic transmitting before ChasePlane's auto-spot is enabled.
+auto_spot_threshold_ms = {auto_spot}
+
+# Minimum time between scene change events.
+scene_change_threshold_ms = {scene_change}
+"#,
+        chaseplane_url = d.chaseplane.url,
+        view_switching = d.chaseplane.view_switching,
+        view_profile_theme = d.chaseplane.view_profile_theme,
+        trackaudio_url = d.trackaudio.url,
+        track = ms(d.tracking.track_threshold),
+        auto_spot = ms(d.tracking.auto_spot_threshold),
+        scene_change = ms(d.tracking.scene_change_threshold),
+    )
 }
 
 fn parse(contents: &str) -> toml::Table {
@@ -113,9 +138,13 @@ pub fn load() -> Options {
     from_table(&values)
 }
 
-fn string_or(values: &toml::Table, key: &str, default: &str) -> String {
-    values
-        .get(key)
+fn section<'a>(values: &'a toml::Table, name: &str) -> Option<&'a toml::Table> {
+    values.get(name).and_then(|v| v.as_table())
+}
+
+fn string_or(section: Option<&toml::Table>, key: &str, default: &str) -> String {
+    section
+        .and_then(|s| s.get(key))
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -123,32 +152,58 @@ fn string_or(values: &toml::Table, key: &str, default: &str) -> String {
         .to_string()
 }
 
+fn bool_or(section: Option<&toml::Table>, key: &str, default: bool) -> bool {
+    section
+        .and_then(|s| s.get(key))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(default)
+}
+
+fn duration_ms_or(section: Option<&toml::Table>, key: &str, default: Duration) -> Duration {
+    section
+        .and_then(|s| s.get(key))
+        .and_then(|v| v.as_integer())
+        .and_then(|v| u64::try_from(v).ok())
+        .map(Duration::from_millis)
+        .unwrap_or(default)
+}
+
 fn from_table(values: &toml::Table) -> Options {
-    let get = |index: usize| {
-        let e = &ENTRIES[index];
-        let ms = values
-            .get(e.key)
-            .and_then(|v| v.as_integer())
-            .and_then(|v| u64::try_from(v).ok())
-            .unwrap_or(e.default_ms);
-        Duration::from_millis(ms)
-    };
+    let d = Options::default();
+    let chaseplane = section(values, "chaseplane");
+    let trackaudio = section(values, "trackaudio");
+    let tracking = section(values, "tracking");
 
     Options {
-        track_threshold: get(0),
-        auto_spot_threshold: get(1),
-        scene_change_threshold: get(2),
-        view_switching: values
-            .get(VIEW_SWITCHING_KEY)
-            .and_then(|v| v.as_bool())
-            .unwrap_or(DEFAULT_VIEW_SWITCHING),
-        view_profile_theme: values
-            .get(VIEW_THEME_KEY)
-            .and_then(|v| v.as_str())
-            .map(str::to_string)
-            .unwrap_or_else(|| DEFAULT_VIEW_THEME.to_string()),
-        chaseplane_url: string_or(values, CHASEPLANE_URL_KEY, DEFAULT_CHASEPLANE_URL),
-        trackaudio_url: string_or(values, TRACKAUDIO_URL_KEY, DEFAULT_TRACKAUDIO_URL),
+        chaseplane: ChaseplaneOptions {
+            url: string_or(chaseplane, "url", &d.chaseplane.url),
+            view_switching: bool_or(chaseplane, "view_switching", d.chaseplane.view_switching),
+            view_profile_theme: string_or(
+                chaseplane,
+                "view_profile_theme",
+                &d.chaseplane.view_profile_theme,
+            ),
+        },
+        trackaudio: TrackAudioOptions {
+            url: string_or(trackaudio, "url", &d.trackaudio.url),
+        },
+        tracking: TrackingOptions {
+            track_threshold: duration_ms_or(
+                tracking,
+                "track_threshold_ms",
+                d.tracking.track_threshold,
+            ),
+            auto_spot_threshold: duration_ms_or(
+                tracking,
+                "auto_spot_threshold_ms",
+                d.tracking.auto_spot_threshold,
+            ),
+            scene_change_threshold: duration_ms_or(
+                tracking,
+                "scene_change_threshold_ms",
+                d.tracking.scene_change_threshold,
+            ),
+        },
     }
 }
 
@@ -159,33 +214,50 @@ mod tests {
     #[test]
     fn defaults_when_keys_missing() {
         let o = from_table(&parse(""));
-        assert!(!o.view_switching);
-        assert_eq!(o.view_profile_theme, "WORLD_TOWER");
-        assert_eq!(o.track_threshold, Duration::from_millis(500));
-        assert_eq!(o.chaseplane_url, "ws://127.0.0.1:8652/");
-        assert_eq!(o.trackaudio_url, "ws://127.0.0.1:49080/ws");
+        assert!(!o.chaseplane.view_switching);
+        assert_eq!(o.chaseplane.view_profile_theme, "WORLD_TOWER");
+        assert_eq!(o.chaseplane.url, "ws://127.0.0.1:8652/");
+        assert_eq!(o.trackaudio.url, "ws://127.0.0.1:49080/ws");
+        assert_eq!(o.tracking.track_threshold, Duration::from_millis(500));
     }
 
     #[test]
-    fn reads_custom_urls() {
+    fn reads_values_from_sections() {
         let o = from_table(&parse(
-            "chaseplane_url = \"ws://192.168.1.5:8652/\"\ntrackaudio_url = \"192.168.1.6\"",
+            r#"
+[chaseplane]
+url = "ws://192.168.1.5:8652/"
+view_switching = true
+view_profile_theme = "CUSTOM"
+
+[trackaudio]
+url = "192.168.1.6"
+
+[tracking]
+track_threshold_ms = 100
+"#,
         ));
-        assert_eq!(o.chaseplane_url, "ws://192.168.1.5:8652/");
-        assert_eq!(o.trackaudio_url, "192.168.1.6");
+        assert_eq!(o.chaseplane.url, "ws://192.168.1.5:8652/");
+        assert!(o.chaseplane.view_switching);
+        assert_eq!(o.chaseplane.view_profile_theme, "CUSTOM");
+        assert_eq!(o.trackaudio.url, "192.168.1.6");
+        assert_eq!(o.tracking.track_threshold, Duration::from_millis(100));
+        assert_eq!(
+            o.tracking.auto_spot_threshold,
+            Duration::from_millis(10_000)
+        );
     }
 
     #[test]
-    fn reads_values_and_default_file_round_trips() {
-        let o = from_table(&parse(
-            "view_switching = true\nview_profile_theme = \"CUSTOM\"\ntrack_threshold_ms = 100",
-        ));
-        assert!(o.view_switching);
-        assert_eq!(o.view_profile_theme, "CUSTOM");
-        assert_eq!(o.track_threshold, Duration::from_millis(100));
+    fn keys_outside_their_section_are_ignored() {
+        let o = from_table(&parse("view_switching = true\n[tracking]\nurl = \"x\""));
+        assert!(!o.chaseplane.view_switching);
+    }
 
+    #[test]
+    fn default_file_round_trips() {
         let d = from_table(&parse(&default_contents()));
-        assert!(!d.view_switching);
-        assert_eq!(d.view_profile_theme, "WORLD_TOWER");
+        let expected = Options::default();
+        assert_eq!(format!("{d:?}"), format!("{expected:?}"));
     }
 }

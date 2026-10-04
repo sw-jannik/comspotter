@@ -6,15 +6,19 @@ mod tracking;
 use std::sync::Arc;
 
 use chaseplane::ChaseplaneClient;
+use options::Options;
 use tracking::AircraftTracker;
-use tracking::Options;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let options = options::load();
     println!("Loaded options: {:?}", options);
 
-    let chaseplane = ChaseplaneClient::connect(&options.chaseplane_url, &options.view_profile_theme).await?;
+    let chaseplane = ChaseplaneClient::connect(
+        &options.chaseplane.url,
+        &options.chaseplane.view_profile_theme,
+    )
+    .await?;
 
     tokio::try_join!(run_tracking(chaseplane.clone(), options))?;
 
@@ -26,7 +30,7 @@ async fn run_tracking(
     chaseplane: Arc<ChaseplaneClient>,
     options: Options,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let ta_client = trackaudio::connect(&options.trackaudio_url).await?;
+    let ta_client = trackaudio::connect(&options.trackaudio.url).await?;
     let mut events = ta_client.subscribe();
     let mut tracker = AircraftTracker::new(chaseplane, options);
 
