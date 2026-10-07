@@ -19,6 +19,8 @@ On the left you'll see the ChasePlanes spotting interface and ComSpotters log so
 
 ComSpotter connects to ChasePlane and TrackAudio on their default local addresses unless changed in the options. If you are running TrackAudio and MSFS/ChasePlane on different devices you'll need to change these.
 
+**Note:** For ComSpotter to track an aircraft it needs to be visible in the Chaseplane spotting menu. If any aircraft are not visible there, check the `AI Traffic Settings`. You can find them on the `Spotting` page in ChasePlane via the cogwheel icon next to `Traffic`. You can adjust filtering and range settings there.
+
 ## Options
 
 Options live in `comspotter.options.toml` next to the executable, grouped into the sections `[chaseplane]`, `[trackaudio]` and `[tracking]`. All durations are in milliseconds. Missing or invalid values fall back to their defaults.
