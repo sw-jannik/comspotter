@@ -7,7 +7,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Instant;
 use trackaudio::Event;
 
-use crate::chaseplane::ChaseplaneClient;
+use crate::chaseplane::{ChaseplaneClient, TrafficInfo};
 use crate::options::Options;
 
 /// Repeated RX starts from the same callsign within this window are treated as duplicates.
@@ -25,6 +25,8 @@ pub struct AircraftTracker {
     pending: HashMap<String, JoinHandle<()>>,
     // Pending auto-spot-enable timer, reset whenever known traffic transmits.
     auto_spot_timer: Option<JoinHandle<()>>,
+    // Switches views when auto-spot follows a new aircraft; only runs if enabled in the options.
+    auto_spot_view_watcher: Option<JoinHandle<()>>,
     // Time of the last successful scene change. A track task holds the lock while it waits out
     // the scene change cooldown, which serializes concurrent track attempts.
     last_scene_change: Arc<Mutex<Option<Instant>>>,
@@ -32,13 +34,26 @@ pub struct AircraftTracker {
 
 impl AircraftTracker {
     pub fn new(chaseplane: Arc<ChaseplaneClient>, options: Options) -> Self {
+        let last_scene_change = Arc::new(Mutex::new(None));
+        let auto_spot_view_watcher = (options.chaseplane.view_switching
+            && options.chaseplane.auto_spot_view_switching)
+            .then(|| {
+                tokio::spawn(watch_auto_spot(
+                    chaseplane.clone(),
+                    options.chaseplane.auto_spot_continuous_view_switching,
+                    options.tracking.scene_change_threshold,
+                    last_scene_change.clone(),
+                ))
+            });
+
         Self {
             chaseplane,
             options,
             pending: HashMap::new(),
             auto_spot_timer: None,
+            auto_spot_view_watcher,
             last_rx_begin: HashMap::new(),
-            last_scene_change: Arc::new(Mutex::new(None)),
+            last_scene_change,
         }
     }
 
@@ -134,6 +149,14 @@ impl AircraftTracker {
     }
 }
 
+impl Drop for AircraftTracker {
+    fn drop(&mut self) {
+        if let Some(handle) = self.auto_spot_view_watcher.take() {
+            handle.abort();
+        }
+    }
+}
+
 /// Tracks `callsign` in ChasePlane if it's currently known AI traffic; no-op otherwise. If
 /// `view_switching` is set, also jumps to the closest saved view afterwards (see
 /// `switch_to_closest_view` for `force_view_switch`).
@@ -155,7 +178,10 @@ async fn track_if_known(
                 traffic.callsign
             );
             if view_switching {
-                switch_to_closest_view(chaseplane, callsign, force_view_switch).await;
+                // Re-read the traffic entry: the position may have been updated while tracking.
+                if let Some(traffic) = chaseplane.find_by_callsign(callsign) {
+                    switch_to_closest_view(chaseplane, &traffic, force_view_switch).await;
+                }
             }
             true
         }
@@ -166,19 +192,19 @@ async fn track_if_known(
     }
 }
 
-/// Switches to the saved view closest to the aircraft's latest known position. Does nothing if
-/// that view is already the current one, unless `force` is set.
-async fn switch_to_closest_view(chaseplane: &ChaseplaneClient, callsign: &str, force: bool) {
-    // Re-read the traffic entry: the position may have been updated while tracking.
-    let Some(traffic) = chaseplane.find_by_callsign(callsign) else {
-        return;
-    };
+/// Switches to the saved view closest to the aircraft's position. Does nothing if that view is
+/// already the current one, unless `force` is set. Returns whether a switch happened.
+async fn switch_to_closest_view(
+    chaseplane: &ChaseplaneClient,
+    traffic: &TrafficInfo,
+    force: bool,
+) -> bool {
     let Some(view) = chaseplane.closest_view(traffic.lat, traffic.lon) else {
-        return;
+        return false;
     };
 
     if !force && chaseplane.current_view().as_deref() == Some(view.guid.as_str()) {
-        return;
+        return false;
     }
 
     match chaseplane.set_view_by_guid(&view.guid).await {
@@ -186,13 +212,72 @@ async fn switch_to_closest_view(chaseplane: &ChaseplaneClient, callsign: &str, f
             println!(
                 "🎥 Switched to view \"{}\" for {}",
                 view.name, traffic.callsign
-            )
+            );
+            true
         }
-        Ok(reply) => eprintln!(
-            "🎥 Failed to switch to view \"{}\": status {}",
-            view.name, reply.status
-        ),
-        Err(err) => eprintln!("🎥 Failed to switch to view \"{}\": {err}", view.name),
+        Ok(reply) => {
+            eprintln!(
+                "🎥 Failed to switch to view \"{}\": status {}",
+                view.name, reply.status
+            );
+            false
+        }
+        Err(err) => {
+            eprintln!("🎥 Failed to switch to view \"{}\": {err}", view.name);
+            false
+        }
+    }
+}
+
+/// The aircraft ChasePlane's auto-spot is currently following, if auto-spot is active.
+fn auto_spot_target(chaseplane: &ChaseplaneClient) -> Option<u64> {
+    chaseplane
+        .camera_state()
+        .filter(|state| state.ai_traffic_auto_target_enabled)
+        .and_then(|state| state.ai_traffic_tracking_id)
+        .filter(|id| *id != 0)
+}
+
+/// Watches ChasePlane's camera state and switches to the closest view while auto-spot follows an
+/// aircraft: on every camera state update if `continuous`, otherwise only when it starts following
+/// a different aircraft. Never forces a switch to the current view. Shares the scene change
+/// cooldown with explicit tracking.
+async fn watch_auto_spot(
+    chaseplane: Arc<ChaseplaneClient>,
+    continuous: bool,
+    scene_change_threshold: Duration,
+    last_scene_change: Arc<Mutex<Option<Instant>>>,
+) {
+    let mut camera_state = chaseplane.subscribe_camera_state();
+    let mut handled: Option<u64> = None;
+
+    while camera_state.changed().await.is_ok() {
+        let Some(id) = auto_spot_target(&chaseplane) else {
+            handled = None;
+            continue;
+        };
+        // Unknown traffic is retried on the next camera state message.
+        if (!continuous && handled == Some(id)) || chaseplane.get_traffic(id).is_none() {
+            continue;
+        }
+
+        let mut last = last_scene_change.lock().await;
+        if let Some(at) = *last {
+            tokio::time::sleep_until(at + scene_change_threshold).await;
+        }
+
+        // The target may have changed while waiting out the cooldown.
+        let Some(id) = auto_spot_target(&chaseplane) else {
+            handled = None;
+            continue;
+        };
+        let Some(traffic) = chaseplane.get_traffic(id) else {
+            continue;
+        };
+        handled = Some(id);
+        if switch_to_closest_view(&chaseplane, &traffic, false).await {
+            *last = Some(Instant::now());
+        }
     }
 }
 

@@ -20,6 +20,8 @@ pub struct ChaseplaneOptions {
     pub url: String,
     pub view_switching: bool,
     pub force_view_switch: bool,
+    pub auto_spot_view_switching: bool,
+    pub auto_spot_continuous_view_switching: bool,
     pub view_profile_theme: String,
 }
 
@@ -42,6 +44,8 @@ impl Default for Options {
                 url: DEFAULT_CHASEPLANE_URL.to_string(),
                 view_switching: false,
                 force_view_switch: false,
+                auto_spot_view_switching: true,
+                auto_spot_continuous_view_switching: true,
                 view_profile_theme: DEFAULT_VIEW_THEME.to_string(),
             },
             trackaudio: TrackAudioOptions {
@@ -77,8 +81,15 @@ url = "{chaseplane_url}"
 # After tracking a station, also switch to the saved ChasePlane view (active airport) closest to the aircraft.
 view_switching = {view_switching}
 
-# Switch to the closest view even if it is already the current one.
+# Switch to the closest view even if it is already the current one (RX-based tracking only, not auto-spot).
 force_view_switch = {force_view_switch}
+
+# Also switch to the closest view when ChasePlane's auto-spot picks a new aircraft (requires view_switching).
+auto_spot_view_switching = {auto_spot_view_switching}
+
+# While auto-spot follows an aircraft, keep switching to the closest view as it moves.
+# If false, switch only once when auto-spot starts following an aircraft.
+auto_spot_continuous_view_switching = {auto_spot_continuous_view_switching}
 
 # Only ChasePlane views with this profile_theme are used for view switching.
 view_profile_theme = "{view_profile_theme}"
@@ -100,6 +111,8 @@ scene_change_threshold_ms = {scene_change}
         chaseplane_url = d.chaseplane.url,
         view_switching = d.chaseplane.view_switching,
         force_view_switch = d.chaseplane.force_view_switch,
+        auto_spot_view_switching = d.chaseplane.auto_spot_view_switching,
+        auto_spot_continuous_view_switching = d.chaseplane.auto_spot_continuous_view_switching,
         view_profile_theme = d.chaseplane.view_profile_theme,
         trackaudio_url = d.trackaudio.url,
         track = ms(d.tracking.track_threshold),
@@ -189,6 +202,16 @@ fn from_table(values: &toml::Table) -> Options {
                 "force_view_switch",
                 d.chaseplane.force_view_switch,
             ),
+            auto_spot_view_switching: bool_or(
+                chaseplane,
+                "auto_spot_view_switching",
+                d.chaseplane.auto_spot_view_switching,
+            ),
+            auto_spot_continuous_view_switching: bool_or(
+                chaseplane,
+                "auto_spot_continuous_view_switching",
+                d.chaseplane.auto_spot_continuous_view_switching,
+            ),
             view_profile_theme: string_or(
                 chaseplane,
                 "view_profile_theme",
@@ -226,6 +249,8 @@ mod tests {
     fn defaults_when_keys_missing() {
         let o = from_table(&parse(""));
         assert!(!o.chaseplane.view_switching);
+        assert!(o.chaseplane.auto_spot_view_switching);
+        assert!(o.chaseplane.auto_spot_continuous_view_switching);
         assert_eq!(o.chaseplane.view_profile_theme, "WORLD_TOWER");
         assert_eq!(o.chaseplane.url, "ws://127.0.0.1:8652/");
         assert_eq!(o.trackaudio.url, "ws://127.0.0.1:49080/ws");

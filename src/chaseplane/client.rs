@@ -7,12 +7,12 @@ use futures_util::stream::{SplitSink, SplitStream};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex as TokioMutex, oneshot};
+use tokio::sync::{Mutex as TokioMutex, oneshot, watch};
 use tokio::time::timeout;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream, connect_async, tungstenite::Message};
 
 use super::error::{Error, Result};
-use super::message::{ApiReply, ServerMessage};
+use super::message::{ApiReply, CameraRuntimeState, ServerMessage};
 use super::traffic::TrafficInfo;
 use super::view::{self, GetViewsReply, View};
 
@@ -35,6 +35,8 @@ pub struct ChaseplaneClient {
     views: StdMutex<Vec<View>>,
     // GUID of the view last switched to by us; reset when the active airport changes.
     current_view: StdMutex<Option<String>>,
+    // Latest `camera_runtime_state`; `None` until the first one arrives.
+    camera_state: watch::Sender<Option<CameraRuntimeState>>,
     view_theme: String,
 }
 
@@ -52,6 +54,7 @@ impl ChaseplaneClient {
             active_icao: StdMutex::new(None),
             views: StdMutex::new(Vec::new()),
             current_view: StdMutex::new(None),
+            camera_state: watch::channel(None).0,
             view_theme: view_theme.to_string(),
         };
 
@@ -149,6 +152,9 @@ impl ChaseplaneClient {
                 }
                 self.spawn_refresh_views();
             }
+            ServerMessage::CameraRuntimeState { payload } => {
+                self.camera_state.send_replace(Some(payload));
+            }
             ServerMessage::Other => {}
         }
     }
@@ -205,6 +211,16 @@ impl ChaseplaneClient {
     /// The saved view (active airport, configured theme) closest horizontally to the given position.
     pub fn closest_view(&self, lat: f64, lon: f64) -> Option<View> {
         view::closest(&self.views.lock().unwrap(), lat, lon).cloned()
+    }
+
+    /// The most recent camera state received from ChasePlane, if any.
+    pub fn camera_state(&self) -> Option<CameraRuntimeState> {
+        self.camera_state.borrow().clone()
+    }
+
+    /// Receiver notified on every camera state message.
+    pub fn subscribe_camera_state(&self) -> watch::Receiver<Option<CameraRuntimeState>> {
+        self.camera_state.subscribe()
     }
 
     /// Snapshot of the saved views for the active airport.

@@ -9,6 +9,6 @@ mod view;
 
 pub use client::{ChaseplaneClient, DEFAULT_URL, DEFAULT_VIEW_THEME};
 pub use error::{Error, Result};
-pub use message::ApiReply;
+pub use message::{ApiReply, CameraPosition, CameraRuntimeState, LookAtPosition};
 pub use traffic::TrafficInfo;
 pub use view::View;
