@@ -46,11 +46,17 @@ impl AircraftTracker {
                 ))
             });
 
+        // Start the countdown immediately so auto-spot also engages if no traffic ever transmits.
+        let auto_spot_timer = Some(spawn_auto_spot_timer(
+            chaseplane.clone(),
+            options.tracking.auto_spot_threshold,
+        ));
+
         Self {
             chaseplane,
             options,
             pending: HashMap::new(),
-            auto_spot_timer: None,
+            auto_spot_timer,
             auto_spot_view_watcher,
             last_rx_begin: HashMap::new(),
             last_scene_change,
@@ -139,12 +145,10 @@ impl AircraftTracker {
             if let Some(handle) = self.auto_spot_timer.take() {
                 handle.abort();
             }
-            let chaseplane = self.chaseplane.clone();
-            let auto_spot_threshold = self.options.tracking.auto_spot_threshold;
-            self.auto_spot_timer = Some(tokio::spawn(async move {
-                tokio::time::sleep(auto_spot_threshold).await;
-                enable_auto_spot(&chaseplane).await;
-            }));
+            self.auto_spot_timer = Some(spawn_auto_spot_timer(
+                self.chaseplane.clone(),
+                self.options.tracking.auto_spot_threshold,
+            ));
         }
     }
 }
@@ -154,7 +158,17 @@ impl Drop for AircraftTracker {
         if let Some(handle) = self.auto_spot_view_watcher.take() {
             handle.abort();
         }
+        if let Some(handle) = self.auto_spot_timer.take() {
+            handle.abort();
+        }
     }
+}
+
+fn spawn_auto_spot_timer(chaseplane: Arc<ChaseplaneClient>, threshold: Duration) -> JoinHandle<()> {
+    tokio::spawn(async move {
+        tokio::time::sleep(threshold).await;
+        enable_auto_spot(&chaseplane).await;
+    })
 }
 
 /// Tracks `callsign` in ChasePlane if it's currently known AI traffic; no-op otherwise. If
