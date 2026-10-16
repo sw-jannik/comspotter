@@ -187,10 +187,7 @@ async fn track_if_known(
 
     match chaseplane.track_by_id(traffic.uid).await {
         Ok(_reply) => {
-            println!(
-                "🎯 Tracking {} after sustained transmission",
-                traffic.callsign
-            );
+            println!("🎯 Tracking {}", traffic.callsign);
             if view_switching {
                 // Re-read the traffic entry: the position may have been updated while tracking.
                 if let Some(traffic) = chaseplane.find_by_callsign(callsign) {
