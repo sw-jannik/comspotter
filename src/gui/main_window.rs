@@ -256,15 +256,24 @@ fn camera_card(ui: &mut egui::Ui, state: &AppState) {
 
         let chaseplane = state.chaseplane.as_ref();
         let views = chaseplane.map(|c| c.views()).unwrap_or_default();
-        let current = chaseplane.and_then(|c| c.current_view()).map(|guid| {
-            views
-                .iter()
-                .find(|v| v.guid == guid)
-                .map_or(guid, |v| v.name.clone())
-        });
+        let current_guid = chaseplane.and_then(|c| c.current_view());
+        let current_view = current_guid
+            .as_ref()
+            .and_then(|guid| views.iter().find(|v| &v.guid == guid));
+        let distance_km = chaseplane
+            .zip(current_view)
+            .and_then(|(c, view)| {
+                let id = c
+                    .camera_state()?
+                    .ai_traffic_tracking_id
+                    .filter(|id| *id != 0)?;
+                let target = c.get_traffic(id)?;
+                Some(view.distance_km(target.lat, target.lon))
+            });
+        let current = current_guid.map(|guid| current_view.map_or(guid, |v| v.name.clone()));
 
         big_row(ui, |ui| match (current, chaseplane) {
-            (Some(name), _) => line(ui, egui::RichText::new(name).size(18.0)),
+            (Some(name), _) => line(ui, egui::RichText::new(name).size(18.0).strong()),
             (None, Some(_)) => line(
                 ui,
                 egui::RichText::new("No view selected by ComSpotter").color(GRAY),
@@ -275,6 +284,15 @@ fn camera_card(ui: &mut egui::Ui, state: &AppState) {
             ),
         });
 
+        optional_line(
+            ui,
+            distance_km.map(|km| {
+                (
+                    format!("Distance to target: {km:.2} km"),
+                    ui.visuals().text_color(),
+                )
+            }),
+        );
         optional_line(
             ui,
             chaseplane.map(|c| {
