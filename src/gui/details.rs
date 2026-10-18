@@ -256,6 +256,10 @@ fn views_tab(ui: &mut egui::Ui, chaseplane: &ChaseplaneClient) {
         chaseplane.view_theme(),
         views.len()
     ));
+    if let Some(info) = chaseplane.current_view_info() {
+        let guid = info.guid.as_deref().unwrap_or("no GUID");
+        ui.label(format!("Current view: {} ({guid})", info.label()));
+    }
     if let Some(t) = &tracked {
         ui.label(format!("Distances are measured to {}", t.callsign));
     }

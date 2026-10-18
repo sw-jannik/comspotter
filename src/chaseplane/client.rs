@@ -22,6 +22,32 @@ pub const DEFAULT_URL: &str = "ws://127.0.0.1:8652/";
 pub const DEFAULT_VIEW_THEME: &str = "WORLD_TOWER";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Debug, Clone)]
+struct ViewSelection {
+    guid: Option<String>,
+    preview_name: Option<String>,
+}
+
+/// The camera view currently active in ChasePlane.
+#[derive(Debug, Clone)]
+pub struct CurrentView {
+    pub guid: Option<String>,
+    /// The matching saved view; `None` for a custom view.
+    pub view: Option<View>,
+    pub preview_name: Option<String>,
+}
+
+impl CurrentView {
+    /// Saved view name, or a "Custom view" label (with the preview name if there is one).
+    pub fn label(&self) -> String {
+        match (&self.view, &self.preview_name) {
+            (Some(view), _) => view.name.clone(),
+            (None, Some(name)) => format!("Custom view ({name})"),
+            (None, None) => "Custom view".to_string(),
+        }
+    }
+}
+
 /// A connection to ChasePlane's websocket API, tracking known AI traffic and
 /// letting callers request that a specific aircraft be tracked/viewed.
 pub struct ChaseplaneClient {
@@ -33,8 +59,12 @@ pub struct ChaseplaneClient {
     active_icao: StdMutex<Option<String>>,
     // Saved views for the active airport and configured theme only.
     views: StdMutex<Vec<View>>,
-    // GUID of the view last switched to by us; reset when the active airport changes.
-    current_view: StdMutex<Option<String>>,
+    // Every view ChasePlane knows about (any airport/theme), to resolve GUIDs from `cam_mode_set`.
+    all_views: StdMutex<Vec<View>>,
+    // View ChasePlane last reported via `cam_mode_set` or that we switched to; `None` until known.
+    current_view: StdMutex<Option<ViewSelection>>,
+    // Unknown GUID we already reloaded the views for, so it only triggers one refresh.
+    refreshed_for_guid: StdMutex<Option<String>>,
     // Distance in km from each saved view (by GUID) to the tracked aircraft; empty if nothing is tracked.
     view_distances: StdMutex<HashMap<String, f64>>,
     // Latest `camera_runtime_state`; `None` until the first one arrives.
@@ -57,7 +87,9 @@ impl ChaseplaneClient {
             request_counter: AtomicU64::new(0),
             active_icao: StdMutex::new(None),
             views: StdMutex::new(Vec::new()),
+            all_views: StdMutex::new(Vec::new()),
             current_view: StdMutex::new(None),
+            refreshed_for_guid: StdMutex::new(None),
             view_distances: StdMutex::new(HashMap::new()),
             camera_state: watch::channel(None).0,
             connected: watch::channel(true).0,
@@ -155,12 +187,29 @@ impl ChaseplaneClient {
                     if active.as_deref() != Some(ident.as_str()) {
                         crate::app_info!("🛫 Active airport: {ident}");
                         self.views.lock().unwrap().clear();
-                        *self.current_view.lock().unwrap() = None;
                         self.view_distances.lock().unwrap().clear();
                     }
                     *active = Some(ident);
                 }
                 self.spawn_refresh_views();
+            }
+            ServerMessage::CamModeSet { payload } => {
+                let guid = payload.preset_guid.filter(|g| !g.is_empty());
+                let unknown = guid
+                    .as_deref()
+                    .is_some_and(|g| self.view_by_guid(g).is_none());
+                if unknown {
+                    let mut refreshed = self.refreshed_for_guid.lock().unwrap();
+                    if *refreshed != guid {
+                        *refreshed = guid.clone();
+                        drop(refreshed);
+                        self.spawn_refresh_views();
+                    }
+                }
+                *self.current_view.lock().unwrap() = Some(ViewSelection {
+                    guid,
+                    preview_name: payload.preview_name.filter(|n| !n.is_empty()),
+                });
             }
             ServerMessage::CameraRuntimeState { payload } => {
                 let tracking_changed = self
@@ -196,6 +245,7 @@ impl ChaseplaneClient {
             return Ok(());
         }
         let parsed: GetViewsReply = serde_json::from_value(reply.payload)?;
+        *self.all_views.lock().unwrap() = view::all_views(&parsed.payload.views);
 
         let Some(icao) = self.active_icao.lock().unwrap().clone() else {
             return Ok(());
@@ -269,14 +319,46 @@ impl ChaseplaneClient {
             .send_request("set_view_by_guid", json!({ "guid": guid }))
             .await?;
         if reply.is_success() {
-            *self.current_view.lock().unwrap() = Some(guid.to_string());
+            *self.current_view.lock().unwrap() = Some(ViewSelection {
+                guid: Some(guid.to_string()),
+                preview_name: None,
+            });
         }
         Ok(reply)
     }
 
-    /// GUID of the view last switched to via `set_view_by_guid`, if any.
+    /// GUID of the active saved view (from `cam_mode_set` or our last `set_view_by_guid`), if any.
     pub fn current_view(&self) -> Option<String> {
-        self.current_view.lock().unwrap().clone()
+        self.current_view
+            .lock()
+            .unwrap()
+            .as_ref()
+            .and_then(|s| s.guid.clone())
+    }
+
+    /// The camera view ChasePlane reported as active; `None` until one is known.
+    /// A GUID that matches no known view (or no GUID at all) is a custom view.
+    pub fn current_view_info(&self) -> Option<CurrentView> {
+        let selection = self.current_view.lock().unwrap().clone()?;
+        let view = selection
+            .guid
+            .as_deref()
+            .and_then(|guid| self.view_by_guid(guid));
+        Some(CurrentView {
+            guid: selection.guid,
+            view,
+            preview_name: selection.preview_name,
+        })
+    }
+
+    /// Looks up any view known to ChasePlane (any airport or theme) by GUID.
+    pub fn view_by_guid(&self, guid: &str) -> Option<View> {
+        self.all_views
+            .lock()
+            .unwrap()
+            .iter()
+            .find(|v| v.guid.eq_ignore_ascii_case(guid))
+            .cloned()
     }
 
     /// The saved view (active airport, configured theme) closest horizontally to the given position.

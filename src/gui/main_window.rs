@@ -263,20 +263,21 @@ fn camera_card(ui: &mut egui::Ui, state: &AppState) {
 
         let chaseplane = state.chaseplane.as_ref();
         let views = chaseplane.map(|c| c.views()).unwrap_or_default();
-        let current_guid = chaseplane.and_then(|c| c.current_view());
-        let current_view = current_guid
+        let current_info = chaseplane.and_then(|c| c.current_view_info());
+        let current_view = current_info
             .as_ref()
+            .and_then(|i| i.guid.as_ref())
             .and_then(|guid| views.iter().find(|v| &v.guid == guid));
         let distance_km = chaseplane
             .zip(current_view)
             .and_then(|(c, view)| c.view_distance_km(&view.guid));
-        let current = current_guid.map(|guid| current_view.map_or(guid, |v| v.name.clone()));
+        let current = current_info.map(|i| i.label());
 
         big_row(ui, |ui| match (current, chaseplane) {
             (Some(name), _) => line(ui, egui::RichText::new(name).size(18.0).strong()),
             (None, Some(_)) => line(
                 ui,
-                egui::RichText::new("No view selected by ComSpotter").color(gray(ui)),
+                egui::RichText::new("No view reported yet").color(gray(ui)),
             ),
             (None, None) => line(
                 ui,

@@ -19,8 +19,27 @@ pub(crate) enum ServerMessage {
     CameraRuntimeState {
         payload: CameraRuntimeState,
     },
+    CamModeSet {
+        payload: CamModeSet,
+    },
     #[serde(other)]
     Other,
+}
+
+/// Sent by ChasePlane whenever the active camera mode/view changes, also outside of comspotter.
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct CamModeSet {
+    #[serde(default)]
+    pub mode: Option<i64>,
+    /// GUID of the active view; null or empty if the camera isn't on a saved view.
+    #[serde(default)]
+    pub preset_guid: Option<String>,
+    #[serde(default)]
+    pub preview_name: Option<String>,
+    #[serde(default)]
+    pub look_at: Option<String>,
+    #[serde(default)]
+    pub look_at_position: Option<LookAtPosition>,
 }
 
 /// ChasePlane's continuously sent camera state (`camera_runtime_state`).
@@ -99,6 +118,38 @@ mod tests {
             payload.look_at_position.unwrap().longitude,
             8.595819316591752
         );
+    }
+
+    #[test]
+    fn parses_cam_mode_set() {
+        let message: ServerMessage = serde_json::from_str(
+            r#"{"message":"cam_mode_set","status":200,"payload":{"mode":2,"preset_guid":"c548cc57-0000-0000-ad0f-439fac767b66","preview_name":null,"look_at":"TAM8070","cinematic_enabled":false,"control_profile":1,"views_loaded":true,"master_enabled":true,"head_tracking_enabled":true,"look_at_position":{"longitude":8.476543,"latitude":50.013775,"altitude":353.569988,"agl_min":0,"manual":false}}}"#,
+        )
+        .unwrap();
+        let ServerMessage::CamModeSet { payload } = message else {
+            panic!("wrong variant");
+        };
+        assert_eq!(
+            payload.preset_guid.as_deref(),
+            Some("c548cc57-0000-0000-ad0f-439fac767b66")
+        );
+        assert_eq!(payload.preview_name, None);
+        assert_eq!(payload.look_at.as_deref(), Some("TAM8070"));
+        assert_eq!(payload.look_at_position.unwrap().latitude, 50.013775);
+    }
+
+    #[test]
+    fn cam_mode_set_tolerates_nulls() {
+        let message: ServerMessage = serde_json::from_str(
+            r#"{"message":"cam_mode_set","payload":{"mode":1,"preset_guid":null,"look_at":null,"look_at_position":null}}"#,
+        )
+        .unwrap();
+        let ServerMessage::CamModeSet { payload } = message else {
+            panic!("wrong variant");
+        };
+        assert!(payload.preset_guid.is_none());
+        assert!(payload.look_at.is_none());
+        assert!(payload.look_at_position.is_none());
     }
 
     #[test]

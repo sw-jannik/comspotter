@@ -66,6 +66,19 @@ pub(crate) struct RawPosition {
     pub z: f64,
 }
 
+/// Converts every view regardless of airport, theme or `skip_cycle`; used to resolve GUIDs to names.
+pub(crate) fn all_views(raw: &[RawView]) -> Vec<View> {
+    raw.iter()
+        .map(|v| View {
+            guid: v.guid.clone(),
+            name: v.name.clone(),
+            icao: v.icao.clone(),
+            lat: v.position.z,
+            lon: v.position.x,
+        })
+        .collect()
+}
+
 /// Keeps only views for `icao` with the given profile theme that aren't flagged `skip_cycle`.
 pub(crate) fn filter_views(raw: Vec<RawView>, icao: &str, theme: &str) -> Vec<View> {
     raw.into_iter()
@@ -121,6 +134,7 @@ mod tests {
             ]}}"#,
         )
         .unwrap();
+        assert_eq!(all_views(&reply.payload.views).len(), 4);
         let views = filter_views(reply.payload.views, "eddf", "WORLD_TOWER");
         assert_eq!(views.len(), 1);
         assert_eq!(views[0].guid, "g1");
