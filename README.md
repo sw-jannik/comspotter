@@ -23,24 +23,9 @@ ComSpotter connects to ChasePlane and TrackAudio on their default local addresse
 
 ## User interface
 
-The GUI is built with [egui](https://github.com/emilk/egui) and runs on Windows, macOS and Linux.
-It uses the bundled [Ubuntu](https://github.com/google/fonts/tree/main/ufl/ubuntu) font globally
-and [Ubuntu Mono](https://github.com/google/fonts/tree/main/ufl/ubuntumono) for tables and logs.
-Both fonts are licensed under the Ubuntu Font Licence.
+The main window summarizes connection and tracking status, the active airport and view, and current and recent transmissions. It also provides controls to pause tracking or auto-spotting and open the Details and Options windows.
 
-**Main window**
-
-- Connection status of ChasePlane and TrackAudio.
-- The aircraft currently tracked in ChasePlane and whether that happens via auto-spot.
-- Who is transmitting right now and who transmitted last (and whether that station is a known aircraft).
-- The active airport and the view ComSpotter last switched to.
-- **Pause tracking**: transmitting aircraft are no longer tracked while paused.
-- **Pause auto-spot**: turns ChasePlane's auto-spot off and stops ComSpotter from enabling it (including its view switching) while paused.
-- Buttons to open the **Details** and **Options** windows.
-
-**Details window** shows the camera position and look-at position, all known traffic with every field ChasePlane sends, the available views (with the distance to the tracked aircraft), the options in effect and a log.
-
-**Options window** edits all options. *Save & apply* writes them to the options file and applies them right away. Changing a URL or the view profile theme reconnects; everything else applies in place.
+**Details** shows camera position, traffic, available views, active options, and logs. **Options** lets you edit settings and apply them immediately.
 
 ### Headless mode
 
