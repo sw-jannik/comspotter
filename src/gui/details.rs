@@ -197,6 +197,8 @@ fn traffic_tab(
     });
 }
 
+const STATUS_COLUMN_WIDTH: f32 = 45.0;
+
 fn traffic_row(ui: &mut egui::Ui, state: &AppState, t: &TrafficInfo, tracked: bool) {
     let transmitting = state
         .transmitting
@@ -204,6 +206,8 @@ fn traffic_row(ui: &mut egui::Ui, state: &AppState, t: &TrafficInfo, tracked: bo
         .any(|tx| tx.callsign.eq_ignore_ascii_case(&t.callsign));
 
     ui.horizontal(|ui| {
+        // Reserve room for both icons so the columns don't shift when they appear.
+        ui.set_min_width(STATUS_COLUMN_WIDTH);
         if tracked {
             ui.colored_label(green(ui), "🎯")
                 .on_hover_text("Tracked in ChasePlane");
