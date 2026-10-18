@@ -189,13 +189,28 @@ fn show_window(
     open: &mut bool,
     mut add_contents: impl FnMut(&mut egui::Ui),
 ) {
+    show_window_panels(ctx, id, title, size, open, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| add_contents(ui));
+    });
+}
+
+/// Like [`show_window`], but hands over the root `Ui` so the caller can add its own panels
+/// (e.g. a fixed footer) before the central panel.
+fn show_window_panels(
+    ctx: &egui::Context,
+    id: egui::ViewportId,
+    title: impl Into<String>,
+    size: [f32; 2],
+    open: &mut bool,
+    mut add_panels: impl FnMut(&mut egui::Ui),
+) {
     let builder = egui::ViewportBuilder::default()
         .with_title(title)
         .with_inner_size(size)
         .with_min_inner_size([300.0, 200.0]);
 
     ctx.show_viewport_immediate(id, builder, |ui, _class| {
-        egui::CentralPanel::default().show(ui, |ui| add_contents(ui));
+        add_panels(ui);
         if ui.ctx().input(|i| i.viewport().close_requested()) {
             *open = false;
         }
