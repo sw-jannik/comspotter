@@ -24,6 +24,9 @@ ComSpotter connects to ChasePlane and TrackAudio on their default local addresse
 ## User interface
 
 The GUI is built with [egui](https://github.com/emilk/egui) and runs on Windows, macOS and Linux.
+It uses the bundled [Ubuntu](https://github.com/google/fonts/tree/main/ufl/ubuntu) font globally
+and [Ubuntu Mono](https://github.com/google/fonts/tree/main/ufl/ubuntumono) for tables and logs.
+Both fonts are licensed under the Ubuntu Font Licence.
 
 **Main window**
 

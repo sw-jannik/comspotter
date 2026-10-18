@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use eframe::egui;
 
-use super::{gray, green, red, show_window};
+use super::{gray, green, mono_grid, red, show_window};
 use crate::options::{self, Options};
 use crate::state::AppState;
 
@@ -93,10 +93,12 @@ fn fields(ui: &mut egui::Ui, form: &mut OptionsForm) {
     let draft = &mut form.draft;
 
     ui.heading("ChasePlane");
-    egui::Grid::new("options-chaseplane")
-        .num_columns(2)
-        .spacing([12.0, 6.0])
-        .show(ui, |ui| {
+    mono_grid(
+        ui,
+        egui::Grid::new("options-chaseplane")
+            .num_columns(2)
+            .spacing([12.0, 6.0]),
+        |ui| {
             ui.label("URL");
             ui.add(egui::TextEdit::singleline(&mut draft.chaseplane.url).desired_width(300.0))
                 .on_hover_text("WebSocket URL of the ChasePlane API. Changing it reconnects.");
@@ -109,7 +111,8 @@ fn fields(ui: &mut egui::Ui, form: &mut OptionsForm) {
             )
             .on_hover_text("Only views with this profile theme are used. Changing it reconnects.");
             ui.end_row();
-        });
+        },
+    );
     ui.checkbox(
         &mut draft.chaseplane.view_switching,
         "View switching: also switch to the closest saved view after tracking",
@@ -129,24 +132,29 @@ fn fields(ui: &mut egui::Ui, form: &mut OptionsForm) {
 
     ui.add_space(8.0);
     ui.heading("TrackAudio");
-    egui::Grid::new("options-trackaudio")
-        .num_columns(2)
-        .spacing([12.0, 6.0])
-        .show(ui, |ui| {
+    mono_grid(
+        ui,
+        egui::Grid::new("options-trackaudio")
+            .num_columns(2)
+            .spacing([12.0, 6.0]),
+        |ui| {
             ui.label("URL");
             ui.add(egui::TextEdit::singleline(&mut draft.trackaudio.url).desired_width(300.0))
                 .on_hover_text(
                     "WebSocket URL of TrackAudio (full URL, host or host:port). Changing it reconnects.",
                 );
             ui.end_row();
-        });
+        },
+    );
 
     ui.add_space(8.0);
     ui.heading("Tracking");
-    egui::Grid::new("options-tracking")
-        .num_columns(2)
-        .spacing([12.0, 6.0])
-        .show(ui, |ui| {
+    mono_grid(
+        ui,
+        egui::Grid::new("options-tracking")
+            .num_columns(2)
+            .spacing([12.0, 6.0]),
+        |ui| {
             ui.label("Track threshold");
             ui.add(
                 egui::DragValue::new(&mut form.track_ms)
@@ -175,7 +183,8 @@ fn fields(ui: &mut egui::Ui, form: &mut OptionsForm) {
             )
             .on_hover_text("Minimum time between scene changes");
             ui.end_row();
-        });
+        },
+    );
 }
 
 fn buttons(ui: &mut egui::Ui, form: &mut OptionsForm, state: &AppState) -> Option<Options> {

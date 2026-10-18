@@ -19,6 +19,35 @@ use options_window::OptionsForm;
 
 const APP_TITLE: &str = concat!("ComSpotter v", env!("CARGO_PKG_VERSION"));
 
+fn install_fonts(ctx: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "ubuntu".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/Ubuntu-Regular.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "ubuntu_mono".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/UbuntuMono-Regular.ttf"))
+            .into(),
+    );
+    fonts
+        .families
+        .get_mut(&egui::FontFamily::Proportional)
+        .expect("default proportional font family")[0] = "ubuntu".to_owned();
+    fonts
+        .families
+        .get_mut(&egui::FontFamily::Monospace)
+        .expect("default monospace font family")[0] = "ubuntu_mono".to_owned();
+    ctx.set_fonts(fonts);
+}
+
+fn mono_grid(ui: &mut egui::Ui, grid: egui::Grid, add_contents: impl FnOnce(&mut egui::Ui)) {
+    ui.scope(|ui| {
+        ui.style_mut().override_text_style = Some(egui::TextStyle::Monospace);
+        grid.show(ui, add_contents);
+    });
+}
+
 // Status colours: bright shades on dark backgrounds, darker ones on light backgrounds,
 // all chosen for at least 4.5:1 contrast against the default egui panel fill.
 fn themed(ui: &egui::Ui, dark: egui::Color32, light: egui::Color32) -> egui::Color32 {
@@ -72,6 +101,7 @@ pub fn run(state: StateHandle, control: UnboundedSender<Control>) -> eframe::Res
         native_options,
         Box::new(move |cc| {
             applog::set_repaint(cc.egui_ctx.clone());
+            install_fonts(&cc.egui_ctx);
             Ok(Box::new(App::new(state, control)))
         }),
     )
