@@ -41,7 +41,7 @@ The GUI is built with [egui](https://github.com/emilk/egui) and runs on Windows,
 
 ### Headless mode
 
-Run `comspotter --headless` to run without a window. Activity is logged to the console and options are read from the options file at startup.
+Run `comspotter --headless` to run without a window. Activity is logged to the console and options are read from the options file at startup. Press Ctrl+C to stop the app.
 
 ### Linux
 

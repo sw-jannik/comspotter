@@ -27,6 +27,18 @@ pub fn request_repaint() {
     }
 }
 
+/// Closes the GUI window; returns false if there is no window yet.
+pub fn request_close() -> bool {
+    match REPAINT.get() {
+        Some(ctx) => {
+            ctx.send_viewport_cmd(eframe::egui::ViewportCommand::Close);
+            ctx.request_repaint();
+            true
+        }
+        None => false,
+    }
+}
+
 pub fn push(error: bool, text: String) {
     if error {
         eprintln!("{text}");

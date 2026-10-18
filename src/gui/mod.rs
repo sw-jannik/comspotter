@@ -27,7 +27,7 @@ pub fn run(state: StateHandle, control: UnboundedSender<Control>) -> eframe::Res
         viewport: egui::ViewportBuilder::default()
             .with_title("ComSpotter")
             .with_inner_size([440.0, 640.0])
-                        .with_min_inner_size([360.0, 560.0]),
+            .with_min_inner_size([360.0, 560.0]),
         ..Default::default()
     };
 

@@ -69,9 +69,7 @@ pub(crate) struct RawPosition {
 /// Keeps only views for `icao` with the given profile theme that aren't flagged `skip_cycle`.
 pub(crate) fn filter_views(raw: Vec<RawView>, icao: &str, theme: &str) -> Vec<View> {
     raw.into_iter()
-        .filter(|v| {
-            v.icao.eq_ignore_ascii_case(icao) && v.profile_theme == theme && !v.skip_cycle
-        })
+        .filter(|v| v.icao.eq_ignore_ascii_case(icao) && v.profile_theme == theme && !v.skip_cycle)
         .map(|v| View {
             guid: v.guid,
             name: v.name,
