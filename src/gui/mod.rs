@@ -174,9 +174,10 @@ fn ago(at: Instant) -> String {
     format!("{} ago", duration_text(at.elapsed()))
 }
 
-fn ago_system(at: SystemTime) -> String {
-    let elapsed = at.elapsed().unwrap_or_default();
-    format!("{} ago", duration_text(elapsed))
+fn timestamp_system(at: SystemTime) -> String {
+    chrono::DateTime::<chrono::Local>::from(at)
+        .format("%H:%M:%S")
+        .to_string()
 }
 
 fn degrees(value: f64) -> String {

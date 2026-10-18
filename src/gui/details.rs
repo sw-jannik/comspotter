@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use super::{GRAY, GREEN, RED, ago_system, degrees, show_window, status_row};
+use super::{GRAY, GREEN, RED, degrees, show_window, status_row, timestamp_system};
 use crate::applog;
 use crate::chaseplane::{ChaseplaneClient, TrafficInfo};
 use crate::options;
@@ -369,7 +369,7 @@ fn log_tab(ui: &mut egui::Ui) {
         .stick_to_bottom(true)
         .show(ui, |ui| {
             for entry in &entries {
-                let text = format!("{:>10}  {}", ago_system(entry.at), entry.text);
+                let text = format!("{}  {}", timestamp_system(entry.at), entry.text);
                 if entry.error {
                     ui.colored_label(RED, text);
                 } else {
