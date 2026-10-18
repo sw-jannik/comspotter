@@ -262,14 +262,7 @@ fn camera_card(ui: &mut egui::Ui, state: &AppState) {
             .and_then(|guid| views.iter().find(|v| &v.guid == guid));
         let distance_km = chaseplane
             .zip(current_view)
-            .and_then(|(c, view)| {
-                let id = c
-                    .camera_state()?
-                    .ai_traffic_tracking_id
-                    .filter(|id| *id != 0)?;
-                let target = c.get_traffic(id)?;
-                Some(view.distance_km(target.lat, target.lon))
-            });
+            .and_then(|(c, view)| c.view_distance_km(&view.guid));
         let current = current_guid.map(|guid| current_view.map_or(guid, |v| v.name.clone()));
 
         big_row(ui, |ui| match (current, chaseplane) {

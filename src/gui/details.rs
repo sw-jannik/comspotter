@@ -245,11 +245,7 @@ fn traffic_row(ui: &mut egui::Ui, state: &AppState, t: &TrafficInfo, tracked: bo
 fn views_tab(ui: &mut egui::Ui, chaseplane: &ChaseplaneClient) {
     let views = chaseplane.views();
     let current = chaseplane.current_view();
-    let tracked = chaseplane
-        .camera_state()
-        .and_then(|c| c.ai_traffic_tracking_id)
-        .filter(|id| *id != 0)
-        .and_then(|id| chaseplane.get_traffic(id));
+    let tracked = chaseplane.tracked_traffic();
     let closest = tracked
         .as_ref()
         .and_then(|t| chaseplane.closest_view(t.lat, t.lon))
@@ -287,9 +283,9 @@ fn views_tab(ui: &mut egui::Ui, chaseplane: &ChaseplaneClient) {
                 ui.label(format!("{:.5}", v.lat));
                 ui.label(format!("{:.5}", v.lon));
                 ui.label(
-                    tracked
-                        .as_ref()
-                        .map(|t| format!("{:.2} km", v.distance_km(t.lat, t.lon)))
+                    chaseplane
+                        .view_distance_km(&v.guid)
+                        .map(|km| format!("{km:.2} km"))
                         .unwrap_or_default(),
                 );
                 ui.label(&v.guid);

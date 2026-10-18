@@ -35,6 +35,8 @@ pub struct ChaseplaneClient {
     views: StdMutex<Vec<View>>,
     // GUID of the view last switched to by us; reset when the active airport changes.
     current_view: StdMutex<Option<String>>,
+    // Distance in km from each saved view (by GUID) to the tracked aircraft; empty if nothing is tracked.
+    view_distances: StdMutex<HashMap<String, f64>>,
     // Latest `camera_runtime_state`; `None` until the first one arrives.
     camera_state: watch::Sender<Option<CameraRuntimeState>>,
     // `true` while the websocket is open; flips to `false` when the read loop ends.
@@ -56,6 +58,7 @@ impl ChaseplaneClient {
             active_icao: StdMutex::new(None),
             views: StdMutex::new(Vec::new()),
             current_view: StdMutex::new(None),
+            view_distances: StdMutex::new(HashMap::new()),
             camera_state: watch::channel(None).0,
             connected: watch::channel(true).0,
             view_theme: view_theme.to_string(),
@@ -127,6 +130,8 @@ impl ChaseplaneClient {
                 for uid in payload.removed {
                     traffic.remove(&uid);
                 }
+                drop(traffic);
+                self.update_view_distances();
             }
             ServerMessage::ApiReply {
                 request_id,
@@ -151,13 +156,23 @@ impl ChaseplaneClient {
                         crate::app_info!("🛫 Active airport: {ident}");
                         self.views.lock().unwrap().clear();
                         *self.current_view.lock().unwrap() = None;
+                        self.view_distances.lock().unwrap().clear();
                     }
                     *active = Some(ident);
                 }
                 self.spawn_refresh_views();
             }
             ServerMessage::CameraRuntimeState { payload } => {
+                let tracking_changed = self
+                    .camera_state
+                    .borrow()
+                    .as_ref()
+                    .map(|c| c.ai_traffic_tracking_id)
+                    != Some(payload.ai_traffic_tracking_id);
                 self.camera_state.send_replace(Some(payload));
+                if tracking_changed {
+                    self.update_view_distances();
+                }
             }
             ServerMessage::Other => {}
         }
@@ -192,7 +207,39 @@ impl ChaseplaneClient {
             self.view_theme
         );
         *self.views.lock().unwrap() = views;
+        self.update_view_distances();
         Ok(())
+    }
+
+    /// The traffic entry ChasePlane's camera is currently tracking, if known.
+    pub fn tracked_traffic(&self) -> Option<TrafficInfo> {
+        let id = self
+            .camera_state
+            .borrow()
+            .as_ref()?
+            .ai_traffic_tracking_id
+            .filter(|id| *id != 0)?;
+        self.get_traffic(id)
+    }
+
+    /// Recomputes the distance from every saved view to the tracked aircraft.
+    fn update_view_distances(&self) {
+        let distances = match self.tracked_traffic() {
+            Some(target) => self
+                .views
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|v| (v.guid.clone(), v.distance_km(target.lat, target.lon)))
+                .collect(),
+            None => HashMap::new(),
+        };
+        *self.view_distances.lock().unwrap() = distances;
+    }
+
+    /// Distance in km from the saved view with the given GUID to the tracked aircraft, if known.
+    pub fn view_distance_km(&self, guid: &str) -> Option<f64> {
+        self.view_distances.lock().unwrap().get(guid).copied()
     }
 
     /// Whether the websocket connection is still open.
