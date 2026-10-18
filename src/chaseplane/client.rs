@@ -37,6 +37,8 @@ pub struct ChaseplaneClient {
     current_view: StdMutex<Option<String>>,
     // Latest `camera_runtime_state`; `None` until the first one arrives.
     camera_state: watch::Sender<Option<CameraRuntimeState>>,
+    // `true` while the websocket is open; flips to `false` when the read loop ends.
+    connected: watch::Sender<bool>,
     view_theme: String,
 }
 
@@ -55,6 +57,7 @@ impl ChaseplaneClient {
             views: StdMutex::new(Vec::new()),
             current_view: StdMutex::new(None),
             camera_state: watch::channel(None).0,
+            connected: watch::channel(true).0,
             view_theme: view_theme.to_string(),
         };
 
@@ -85,7 +88,7 @@ impl ChaseplaneClient {
             let message = match message {
                 Ok(message) => message,
                 Err(err) => {
-                    eprintln!("chaseplane: websocket error: {err}");
+                    crate::app_error!("chaseplane: websocket error: {err}");
                     break;
                 }
             };
@@ -102,6 +105,7 @@ impl ChaseplaneClient {
         // Unblock any in-flight track_by_id/track_by_callsign calls with ReaderTaskEnded.
         if let Some(client) = client.upgrade() {
             client.pending.lock().unwrap().clear();
+            client.connected.send_replace(false);
         }
     }
 
@@ -109,7 +113,7 @@ impl ChaseplaneClient {
         let message: ServerMessage = match serde_json::from_str(text) {
             Ok(message) => message,
             Err(err) => {
-                eprintln!("chaseplane: failed to parse message: {err}");
+                crate::app_error!("chaseplane: failed to parse message: {err}");
                 return;
             }
         };
@@ -144,7 +148,7 @@ impl ChaseplaneClient {
                 {
                     let mut active = self.active_icao.lock().unwrap();
                     if active.as_deref() != Some(ident.as_str()) {
-                        println!("🛫 Active airport: {ident}");
+                        crate::app_info!("🛫 Active airport: {ident}");
                         self.views.lock().unwrap().clear();
                         *self.current_view.lock().unwrap() = None;
                     }
@@ -163,7 +167,7 @@ impl ChaseplaneClient {
         let client = self.clone();
         tokio::spawn(async move {
             if let Err(err) = client.refresh_views().await {
-                eprintln!("chaseplane: failed to load views: {err}");
+                crate::app_error!("chaseplane: failed to load views: {err}");
             }
         });
     }
@@ -173,7 +177,7 @@ impl ChaseplaneClient {
     pub async fn refresh_views(&self) -> Result<()> {
         let reply = self.send_request("get_views", json!({})).await?;
         if !reply.is_success() {
-            eprintln!("chaseplane: get_views failed with status {}", reply.status);
+            crate::app_error!("chaseplane: get_views failed with status {}", reply.status);
             return Ok(());
         }
         let parsed: GetViewsReply = serde_json::from_value(reply.payload)?;
@@ -182,13 +186,33 @@ impl ChaseplaneClient {
             return Ok(());
         };
         let views = view::filter_views(parsed.payload.views, &icao, &self.view_theme);
-        println!(
+        crate::app_info!(
             "🎥 Loaded {} {} view(s) for {icao}",
             views.len(),
             self.view_theme
         );
         *self.views.lock().unwrap() = views;
         Ok(())
+    }
+
+    /// Whether the websocket connection is still open.
+    pub fn is_connected(&self) -> bool {
+        *self.connected.borrow()
+    }
+
+    /// Receiver notified when the connection state changes (to `false` once the connection ends).
+    pub fn subscribe_connected(&self) -> watch::Receiver<bool> {
+        self.connected.subscribe()
+    }
+
+    /// ICAO of the airport currently active in ChasePlane, if known.
+    pub fn active_icao(&self) -> Option<String> {
+        self.active_icao.lock().unwrap().clone()
+    }
+
+    /// The `profile_theme` that views must have to be used.
+    pub fn view_theme(&self) -> &str {
+        &self.view_theme
     }
 
     /// Switches ChasePlane to the saved view with the given guid.

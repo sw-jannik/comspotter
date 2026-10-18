@@ -14,16 +14,42 @@ On the left you'll see the ChasePlanes spotting interface and ComSpotters log so
 1. Start Euroscope and connect to Vatsim as a controller or observer. You need to use the TrackAudio client. 
 2. Open MSFS and start a Free Flight on your chosen airport.
 3. Open vPilot and connect using `.towerview`.
-4. Run `comspotter.exe` (or `cargo run`/`cargo run --release` when building from source).
-5. On first start, `comspotter.options.toml` is created next to the executable with default values. Edit it and restart ComSpotter to apply changes.
+4. Run `comspotter.exe` (or `cargo run`/`cargo run --release` when building from source). The ComSpotter window opens and shows the connection status and what is being tracked.
+5. On first start, `comspotter.options.toml` is created next to the executable with default values. Change options in the **Options** window (applied immediately, no restart needed) or edit the file and restart ComSpotter.
 
-ComSpotter connects to ChasePlane and TrackAudio on their default local addresses unless changed in the options. If you are running TrackAudio and MSFS/ChasePlane on different devices you'll need to change these.
+ComSpotter connects to ChasePlane and TrackAudio on their default local addresses unless changed in the options. If you are running TrackAudio and MSFS/ChasePlane on different devices you'll need to change these. If a connection fails or drops, ComSpotter keeps retrying in the background.
 
 **Note:** For ComSpotter to track an aircraft it needs to be visible in the Chaseplane spotting menu. If any aircraft are not visible there, check the `AI Traffic Settings`. You can find them on the `Spotting` page in ChasePlane via the cogwheel icon next to `Traffic`. You can adjust filtering and range settings there.
 
+## User interface
+
+The GUI is built with [egui](https://github.com/emilk/egui) and runs on Windows, macOS and Linux.
+
+**Main window**
+
+- Connection status of ChasePlane and TrackAudio.
+- The aircraft currently tracked in ChasePlane and whether that happens via auto-spot.
+- Who is transmitting right now and who transmitted last (and whether that station is a known aircraft).
+- The active airport and the view ComSpotter last switched to.
+- **Pause tracking**: transmitting aircraft are no longer tracked while paused.
+- **Pause auto-spot**: turns ChasePlane's auto-spot off and stops ComSpotter from enabling it (including its view switching) while paused.
+- Buttons to open the **Details** and **Options** windows.
+
+**Details window** shows the camera position and look-at position, all known traffic with every field ChasePlane sends, the available views (with the distance to the tracked aircraft), the options in effect and a log.
+
+**Options window** edits all options. *Save & apply* writes them to the options file and applies them right away. Changing a URL or the view profile theme reconnects; everything else applies in place.
+
+### Headless mode
+
+Run `comspotter --headless` to run without a window. Activity is logged to the console and options are read from the options file at startup.
+
+### Linux
+
+Building on Linux needs the usual windowing development libraries, e.g. on Debian/Ubuntu: `sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libgl1-mesa-dev`.
+
 ## Options
 
-Options live in `comspotter.options.toml` next to the executable, grouped into the sections `[chaseplane]`, `[trackaudio]` and `[tracking]`. All durations are in milliseconds. Missing or invalid values fall back to their defaults.
+Options live in `comspotter.options.toml` next to the executable, grouped into the sections `[chaseplane]`, `[trackaudio]` and `[tracking]`. They can be edited in the Options window or in the file itself (the file is rewritten, including its comments, when saving from the window). All durations are in milliseconds. Missing or invalid values fall back to their defaults.
 
 ### [chaseplane]
 

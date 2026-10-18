@@ -9,6 +9,7 @@ use trackaudio::Event;
 
 use crate::chaseplane::{ChaseplaneClient, TrafficInfo};
 use crate::options::Options;
+use crate::state::{LastTransmission, StateHandle, Transmission};
 
 /// Repeated RX starts from the same callsign within this window are treated as duplicates.
 const RX_BEGIN_DEBOUNCE: Duration = Duration::from_millis(50);
@@ -19,6 +20,11 @@ const RX_BEGIN_DEBOUNCE: Duration = Duration::from_millis(50);
 pub struct AircraftTracker {
     chaseplane: Arc<ChaseplaneClient>,
     options: Options,
+    shared: StateHandle,
+    // While set, transmissions no longer cause aircraft to be tracked.
+    tracking_paused: bool,
+    // While set, auto-spot is kept off and its view switching is suspended.
+    auto_spot_paused: bool,
     // Last accepted RX start per callsign, used to drop duplicate events.
     last_rx_begin: HashMap<String, Instant>,
     // Pending threshold timers, keyed by callsign; aborted if RX ends before they fire.
@@ -33,34 +39,121 @@ pub struct AircraftTracker {
 }
 
 impl AircraftTracker {
-    pub fn new(chaseplane: Arc<ChaseplaneClient>, options: Options) -> Self {
-        let last_scene_change = Arc::new(Mutex::new(None));
-        let auto_spot_view_watcher = (options.chaseplane.view_switching
-            && options.chaseplane.auto_spot_view_switching)
-            .then(|| {
-                tokio::spawn(watch_auto_spot(
-                    chaseplane.clone(),
-                    options.chaseplane.auto_spot_continuous_view_switching,
-                    options.tracking.scene_change_threshold,
-                    last_scene_change.clone(),
-                ))
-            });
+    /// Pause flags are taken from the shared state so they survive reconnects.
+    pub fn new(chaseplane: Arc<ChaseplaneClient>, options: Options, shared: StateHandle) -> Self {
+        let (tracking_paused, auto_spot_paused) = {
+            let state = shared.snapshot();
+            (state.tracking_paused, state.auto_spot_paused)
+        };
 
-        // Start the countdown immediately so auto-spot also engages if no traffic ever transmits.
-        let auto_spot_timer = Some(spawn_auto_spot_timer(
-            chaseplane.clone(),
-            options.tracking.auto_spot_threshold,
-        ));
-
-        Self {
+        let mut tracker = Self {
             chaseplane,
             options,
+            shared,
+            tracking_paused,
+            auto_spot_paused,
             pending: HashMap::new(),
-            auto_spot_timer,
-            auto_spot_view_watcher,
+            auto_spot_timer: None,
+            auto_spot_view_watcher: None,
             last_rx_begin: HashMap::new(),
-            last_scene_change,
+            last_scene_change: Arc::new(Mutex::new(None)),
+        };
+
+        if tracker.auto_spot_paused {
+            tracker.disable_auto_spot();
+        } else {
+            tracker.start_auto_spot();
         }
+        tracker
+    }
+
+    pub fn set_tracking_paused(&mut self, paused: bool) {
+        self.tracking_paused = paused;
+        if paused {
+            for (_, handle) in self.pending.drain() {
+                handle.abort();
+            }
+        }
+        crate::app_info!("Tracking {}", if paused { "paused" } else { "resumed" });
+    }
+
+    /// Pausing also turns ChasePlane's auto-spot off; resuming restarts the idle countdown.
+    pub fn set_auto_spot_paused(&mut self, paused: bool) {
+        self.auto_spot_paused = paused;
+        if paused {
+            self.disable_auto_spot();
+        } else {
+            self.start_auto_spot();
+        }
+        crate::app_info!("Auto-spot {}", if paused { "paused" } else { "resumed" });
+    }
+
+    /// Applies new thresholds and view switching flags. Connection settings are not handled here.
+    pub fn apply_options(&mut self, options: Options) {
+        self.options = options;
+        if self.auto_spot_paused {
+            return;
+        }
+        // Restart the watcher with the new flags, and the idle timer with the new threshold if one
+        // was running (it isn't while known traffic is transmitting).
+        let had_timer = self.auto_spot_timer.is_some();
+        self.stop_auto_spot_tasks();
+        self.start_auto_spot_view_watcher();
+        if had_timer {
+            self.restart_auto_spot_timer();
+        }
+    }
+
+    fn start_auto_spot(&mut self) {
+        self.start_auto_spot_view_watcher();
+        // Start the countdown immediately so auto-spot also engages if no traffic ever transmits.
+        self.restart_auto_spot_timer();
+    }
+
+    fn start_auto_spot_view_watcher(&mut self) {
+        if let Some(handle) = self.auto_spot_view_watcher.take() {
+            handle.abort();
+        }
+        if self.options.chaseplane.view_switching
+            && self.options.chaseplane.auto_spot_view_switching
+        {
+            self.auto_spot_view_watcher = Some(tokio::spawn(watch_auto_spot(
+                self.chaseplane.clone(),
+                self.options.chaseplane.auto_spot_continuous_view_switching,
+                self.options.tracking.scene_change_threshold,
+                self.last_scene_change.clone(),
+            )));
+        }
+    }
+
+    fn restart_auto_spot_timer(&mut self) {
+        if let Some(handle) = self.auto_spot_timer.take() {
+            handle.abort();
+        }
+        self.auto_spot_timer = Some(spawn_auto_spot_timer(
+            self.chaseplane.clone(),
+            self.options.tracking.auto_spot_threshold,
+        ));
+    }
+
+    fn stop_auto_spot_tasks(&mut self) {
+        if let Some(handle) = self.auto_spot_view_watcher.take() {
+            handle.abort();
+        }
+        if let Some(handle) = self.auto_spot_timer.take() {
+            handle.abort();
+        }
+    }
+
+    /// Stops all auto-spot automation and turns ChasePlane's auto-spot off.
+    fn disable_auto_spot(&mut self) {
+        self.stop_auto_spot_tasks();
+        let chaseplane = self.chaseplane.clone();
+        tokio::spawn(async move {
+            if let Err(err) = chaseplane.set_auto_target(false).await {
+                crate::app_error!("🔭 Failed to disable auto-spot: {err}");
+            }
+        });
     }
 
     /// Updates tracking/auto-spot state in response to a TrackAudio event.
@@ -76,21 +169,49 @@ impl AircraftTracker {
                 }
 
                 self.last_rx_begin.insert(rx.callsign.clone(), now);
-                println!("📻 RX Start: {} on {}", rx.callsign, rx.frequency);
+                crate::app_info!("📻 RX Start: {} on {}", rx.callsign, rx.frequency);
+
+                let frequency = rx.frequency.to_string();
+                let known_traffic = self.chaseplane.find_by_callsign(&rx.callsign).is_some();
+                self.shared.update(|state| {
+                    state.transmitting.retain(|t| t.callsign != rx.callsign);
+                    state.transmitting.push(Transmission {
+                        callsign: rx.callsign.clone(),
+                        frequency: frequency.clone(),
+                        since: now,
+                    });
+                    state.last_transmission = Some(LastTransmission {
+                        callsign: rx.callsign.clone(),
+                        frequency,
+                        known_traffic,
+                        started: now,
+                        ended: None,
+                    });
+                });
 
                 self.on_rx_begin(&rx.callsign);
             }
             Event::RxEnd(rx) => {
-                println!("📻 RX End: {} on {}", rx.callsign, rx.frequency);
+                crate::app_info!("📻 RX End: {} on {}", rx.callsign, rx.frequency);
                 if let Some(active) = rx.active_transmitters
                     && !active.is_empty()
                 {
-                    println!("   Still transmitting: {}", active.join(", "));
+                    crate::app_info!("   Still transmitting: {}", active.join(", "));
                 }
+
+                self.shared.update(|state| {
+                    state.transmitting.retain(|t| t.callsign != rx.callsign);
+                    if let Some(last) = state.last_transmission.as_mut()
+                        && last.callsign == rx.callsign
+                    {
+                        last.ended = Some(Instant::now());
+                    }
+                });
+
                 self.on_rx_end(&rx.callsign);
             }
-            Event::TxBegin(_) => println!("🎙️  TX Start"),
-            Event::TxEnd(_) => println!("🎙️  TX End"),
+            Event::TxBegin(_) => crate::app_info!("🎙️  TX Start"),
+            Event::TxEnd(_) => crate::app_info!("🎙️  TX End"),
             _ => {}
         }
     }
@@ -107,7 +228,12 @@ impl AircraftTracker {
             handle.abort();
         }
 
+        if self.tracking_paused {
+            return;
+        }
+
         let chaseplane = self.chaseplane.clone();
+        let shared = self.shared.clone();
         let track_threshold = self.options.tracking.track_threshold;
         let scene_change_threshold = self.options.tracking.scene_change_threshold;
         let view_switching = self.options.chaseplane.view_switching;
@@ -129,7 +255,9 @@ impl AircraftTracker {
             )
             .await
             {
-                *last = Some(Instant::now());
+                let now = Instant::now();
+                *last = Some(now);
+                shared.update(|state| state.last_tracked = Some((owned_callsign, now)));
             }
         });
         self.pending.insert(callsign.to_string(), handle);
@@ -141,24 +269,16 @@ impl AircraftTracker {
             handle.abort();
         }
 
-        if self.chaseplane.find_by_callsign(callsign).is_some() {
-            if let Some(handle) = self.auto_spot_timer.take() {
-                handle.abort();
-            }
-            self.auto_spot_timer = Some(spawn_auto_spot_timer(
-                self.chaseplane.clone(),
-                self.options.tracking.auto_spot_threshold,
-            ));
+        if !self.auto_spot_paused && self.chaseplane.find_by_callsign(callsign).is_some() {
+            self.restart_auto_spot_timer();
         }
     }
 }
 
 impl Drop for AircraftTracker {
     fn drop(&mut self) {
-        if let Some(handle) = self.auto_spot_view_watcher.take() {
-            handle.abort();
-        }
-        if let Some(handle) = self.auto_spot_timer.take() {
+        self.stop_auto_spot_tasks();
+        for (_, handle) in self.pending.drain() {
             handle.abort();
         }
     }
@@ -187,7 +307,7 @@ async fn track_if_known(
 
     match chaseplane.track_by_id(traffic.uid).await {
         Ok(_reply) => {
-            println!("🎯 Tracking {}", traffic.callsign);
+            crate::app_info!("🎯 Tracking {}", traffic.callsign);
             if view_switching {
                 // Re-read the traffic entry: the position may have been updated while tracking.
                 if let Some(traffic) = chaseplane.find_by_callsign(callsign) {
@@ -197,7 +317,7 @@ async fn track_if_known(
             true
         }
         Err(err) => {
-            eprintln!("🎯 Failed to track {}: {err}", traffic.callsign);
+            crate::app_error!("🎯 Failed to track {}: {err}", traffic.callsign);
             false
         }
     }
@@ -220,21 +340,23 @@ async fn switch_to_closest_view(
 
     match chaseplane.set_view_by_guid(&view.guid).await {
         Ok(reply) if reply.is_success() => {
-            println!(
+            crate::app_info!(
                 "🎥 Switched to view \"{}\" for {}",
-                view.name, traffic.callsign
+                view.name,
+                traffic.callsign
             );
             true
         }
         Ok(reply) => {
-            eprintln!(
+            crate::app_error!(
                 "🎥 Failed to switch to view \"{}\": status {}",
-                view.name, reply.status
+                view.name,
+                reply.status
             );
             false
         }
         Err(err) => {
-            eprintln!("🎥 Failed to switch to view \"{}\": {err}", view.name);
+            crate::app_error!("🎥 Failed to switch to view \"{}\": {err}", view.name);
             false
         }
     }
@@ -295,7 +417,7 @@ async fn watch_auto_spot(
 /// Enables ChasePlane's auto-spot after known traffic has gone quiet for a while.
 async fn enable_auto_spot(chaseplane: &ChaseplaneClient) {
     match chaseplane.set_auto_target(true).await {
-        Ok(_reply) => println!("🔭 No known traffic transmitting — enabling auto-spot"),
-        Err(err) => eprintln!("🔭 Failed to enable auto-spot: {err}"),
+        Ok(_reply) => crate::app_info!("🔭 No known traffic transmitting — enabling auto-spot"),
+        Err(err) => crate::app_error!("🔭 Failed to enable auto-spot: {err}"),
     }
 }

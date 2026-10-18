@@ -8,14 +8,14 @@ use crate::trackaudio::DEFAULT_URL as DEFAULT_TRACKAUDIO_URL;
 
 const FILE_NAME: &str = "comspotter.options.toml";
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Options {
     pub chaseplane: ChaseplaneOptions,
     pub trackaudio: TrackAudioOptions,
     pub tracking: TrackingOptions,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct ChaseplaneOptions {
     pub url: String,
     pub view_switching: bool,
@@ -25,12 +25,12 @@ pub struct ChaseplaneOptions {
     pub view_profile_theme: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TrackAudioOptions {
     pub url: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct TrackingOptions {
     pub track_threshold: Duration,
     pub auto_spot_threshold: Duration,
@@ -60,7 +60,7 @@ impl Default for Options {
     }
 }
 
-fn options_path() -> io::Result<PathBuf> {
+pub fn options_path() -> io::Result<PathBuf> {
     let exe = std::env::current_exe()?;
     let dir = exe
         .parent()
@@ -69,14 +69,23 @@ fn options_path() -> io::Result<PathBuf> {
 }
 
 fn default_contents() -> String {
-    let d = Options::default();
+    render(&Options::default())
+}
+
+/// Quotes and escapes a string as a TOML basic string.
+fn quoted(value: &str) -> String {
+    toml::Value::String(value.to_string()).to_string()
+}
+
+/// Serializes options to the commented options file format.
+fn render(d: &Options) -> String {
     let ms = |d: Duration| d.as_millis();
     format!(
         r#"# ComSpotter options. All durations are in milliseconds.
 
 [chaseplane]
 # WebSocket URL of the ChasePlane API.
-url = "{chaseplane_url}"
+url = {chaseplane_url}
 
 # After tracking a station, also switch to the saved ChasePlane view (active airport) closest to the aircraft.
 view_switching = {view_switching}
@@ -92,11 +101,11 @@ auto_spot_view_switching = {auto_spot_view_switching}
 auto_spot_continuous_view_switching = {auto_spot_continuous_view_switching}
 
 # Only ChasePlane views with this profile_theme are used for view switching.
-view_profile_theme = "{view_profile_theme}"
+view_profile_theme = {view_profile_theme}
 
 [trackaudio]
 # WebSocket URL of the TrackAudio instance (host, host:port or full URL).
-url = "{trackaudio_url}"
+url = {trackaudio_url}
 
 [tracking]
 # Minimum continuous transmission time before a station is tracked in ChasePlane.
@@ -108,17 +117,22 @@ auto_spot_threshold_ms = {auto_spot}
 # Minimum time between scene change events.
 scene_change_threshold_ms = {scene_change}
 "#,
-        chaseplane_url = d.chaseplane.url,
+        chaseplane_url = quoted(&d.chaseplane.url),
         view_switching = d.chaseplane.view_switching,
         force_view_switch = d.chaseplane.force_view_switch,
         auto_spot_view_switching = d.chaseplane.auto_spot_view_switching,
         auto_spot_continuous_view_switching = d.chaseplane.auto_spot_continuous_view_switching,
-        view_profile_theme = d.chaseplane.view_profile_theme,
-        trackaudio_url = d.trackaudio.url,
+        view_profile_theme = quoted(&d.chaseplane.view_profile_theme),
+        trackaudio_url = quoted(&d.trackaudio.url),
         track = ms(d.tracking.track_threshold),
         auto_spot = ms(d.tracking.auto_spot_threshold),
         scene_change = ms(d.tracking.scene_change_threshold),
     )
+}
+
+/// Writes the options to the options file next to the executable.
+pub fn save(options: &Options) -> io::Result<()> {
+    fs::write(options_path()?, render(options))
 }
 
 fn parse(contents: &str) -> toml::Table {
@@ -288,6 +302,21 @@ track_threshold_ms = 100
     fn keys_outside_their_section_are_ignored() {
         let o = from_table(&parse("view_switching = true\n[tracking]\nurl = \"x\""));
         assert!(!o.chaseplane.view_switching);
+    }
+
+    #[test]
+    fn saved_non_default_options_round_trip() {
+        let mut o = Options::default();
+        o.chaseplane.url = "ws://host:1/\"quoted\"\\path".into();
+        o.chaseplane.view_switching = true;
+        o.chaseplane.force_view_switch = true;
+        o.chaseplane.auto_spot_view_switching = false;
+        o.chaseplane.view_profile_theme = "MY THEME".into();
+        o.trackaudio.url = "10.0.0.2".into();
+        o.tracking.track_threshold = Duration::from_millis(123);
+        o.tracking.auto_spot_threshold = Duration::from_millis(4567);
+        o.tracking.scene_change_threshold = Duration::from_millis(89);
+        assert_eq!(from_table(&parse(&render(&o))), o);
     }
 
     #[test]

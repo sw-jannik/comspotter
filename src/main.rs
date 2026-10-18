@@ -1,42 +1,45 @@
+mod applog;
 mod chaseplane;
+mod engine;
+mod gui;
 mod options;
+mod state;
 mod trackaudio;
 mod tracking;
 
-use std::sync::Arc;
+use state::StateHandle;
+use tokio::sync::mpsc;
 
-use chaseplane::ChaseplaneClient;
-use options::Options;
-use tracking::AircraftTracker;
+const USAGE: &str = "Usage: comspotter [--headless]\n\n  --headless  Run without the GUI, logging to the console only";
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let options = options::load();
-    println!("Loaded options: {:?}", options);
-
-    let chaseplane = ChaseplaneClient::connect(
-        &options.chaseplane.url,
-        &options.chaseplane.view_profile_theme,
-    )
-    .await?;
-
-    tokio::try_join!(run_tracking(chaseplane.clone(), options))?;
-
-    Ok(())
-}
-
-/// Feeds TrackAudio events to an `AircraftTracker` until the connection ends.
-async fn run_tracking(
-    chaseplane: Arc<ChaseplaneClient>,
-    options: Options,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let ta_client = trackaudio::connect(&options.trackaudio.url).await?;
-    let mut events = ta_client.subscribe();
-    let mut tracker = AircraftTracker::new(chaseplane, options);
-
-    while let Ok(event) = events.recv().await {
-        tracker.handle_event(event);
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let mut headless = false;
+    for arg in std::env::args().skip(1) {
+        match arg.as_str() {
+            "--headless" => headless = true,
+            "-h" | "--help" => {
+                println!("{USAGE}");
+                return Ok(());
+            }
+            other => return Err(format!("Unknown argument: {other}\n\n{USAGE}").into()),
+        }
     }
 
+    let options = options::load();
+    app_info!("Loaded options: {:?}", options);
+
+    let runtime = tokio::runtime::Runtime::new()?;
+    let state = StateHandle::new(options.clone());
+    // Kept alive until exit: the engine stops when all senders are dropped.
+    let (control_tx, control_rx) = mpsc::unbounded_channel();
+    runtime.spawn(engine::run(state.clone(), control_rx, options));
+
+    if headless {
+        runtime.block_on(tokio::signal::ctrl_c())?;
+        return Ok(());
+    }
+
+    // eframe has to own the main thread; the engine runs on the runtime's worker threads.
+    gui::run(state, control_tx)?;
     Ok(())
 }
