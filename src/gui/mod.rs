@@ -17,22 +17,58 @@ use crate::state::{ConnStatus, Control, StateHandle};
 use details::DetailsTab;
 use options_window::OptionsForm;
 
-const GREEN: egui::Color32 = egui::Color32::from_rgb(70, 190, 90);
-const AMBER: egui::Color32 = egui::Color32::from_rgb(230, 170, 40);
-const RED: egui::Color32 = egui::Color32::from_rgb(220, 70, 60);
-const GRAY: egui::Color32 = egui::Color32::GRAY;
+const APP_TITLE: &str = concat!("ComSpotter v", env!("CARGO_PKG_VERSION"));
+
+// Status colours: bright shades on dark backgrounds, darker ones on light backgrounds,
+// all chosen for at least 4.5:1 contrast against the default egui panel fill.
+fn themed(ui: &egui::Ui, dark: egui::Color32, light: egui::Color32) -> egui::Color32 {
+    if ui.visuals().dark_mode { dark } else { light }
+}
+
+fn green(ui: &egui::Ui) -> egui::Color32 {
+    themed(
+        ui,
+        egui::Color32::from_rgb(90, 205, 110),
+        egui::Color32::from_rgb(15, 115, 40),
+    )
+}
+
+fn amber(ui: &egui::Ui) -> egui::Color32 {
+    themed(
+        ui,
+        egui::Color32::from_rgb(240, 180, 50),
+        egui::Color32::from_rgb(150, 85, 0),
+    )
+}
+
+fn red(ui: &egui::Ui) -> egui::Color32 {
+    themed(
+        ui,
+        egui::Color32::from_rgb(255, 110, 100),
+        egui::Color32::from_rgb(180, 25, 25),
+    )
+}
+
+/// De-emphasised text that is still comfortably readable.
+fn gray(ui: &egui::Ui) -> egui::Color32 {
+    themed(
+        ui,
+        egui::Color32::from_rgb(170, 170, 170),
+        egui::Color32::from_rgb(90, 90, 90),
+    )
+}
 
 pub fn run(state: StateHandle, control: UnboundedSender<Control>) -> eframe::Result {
     let native_options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_title("ComSpotter")
+            .with_title(APP_TITLE)
             .with_inner_size([440.0, 640.0])
             .with_min_inner_size([360.0, 560.0]),
         ..Default::default()
     };
 
     eframe::run_native(
-        "ComSpotter",
+        APP_TITLE,
         native_options,
         Box::new(move |cc| {
             applog::set_repaint(cc.egui_ctx.clone());
@@ -118,7 +154,7 @@ impl eframe::App for App {
 fn show_window(
     ctx: &egui::Context,
     id: egui::ViewportId,
-    title: &str,
+    title: impl Into<String>,
     size: [f32; 2],
     open: &mut bool,
     mut add_contents: impl FnMut(&mut egui::Ui),
@@ -136,11 +172,11 @@ fn show_window(
     });
 }
 
-fn status_color(status: &ConnStatus) -> egui::Color32 {
+fn status_color(ui: &egui::Ui, status: &ConnStatus) -> egui::Color32 {
     match status {
-        ConnStatus::Connected => GREEN,
-        ConnStatus::Connecting => AMBER,
-        ConnStatus::Failed(_) => RED,
+        ConnStatus::Connected => green(ui),
+        ConnStatus::Connecting => amber(ui),
+        ConnStatus::Failed(_) => red(ui),
     }
 }
 
@@ -155,7 +191,8 @@ fn status_text(status: &ConnStatus) -> String {
 /// Coloured dot + name + status, e.g. "● ChasePlane  Connected".
 fn status_row(ui: &mut egui::Ui, name: &str, status: &ConnStatus) {
     ui.horizontal_wrapped(|ui| {
-        ui.colored_label(status_color(status), "●");
+        let color = status_color(ui, status);
+        ui.colored_label(color, "●");
         ui.strong(name);
         ui.label(status_text(status));
     });

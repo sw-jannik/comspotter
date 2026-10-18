@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use super::{GRAY, GREEN, RED, degrees, show_window, status_row, timestamp_system};
+use super::{degrees, gray, green, red, show_window, status_row, timestamp_system};
 use crate::applog;
 use crate::chaseplane::{ChaseplaneClient, TrafficInfo};
 use crate::options;
@@ -35,7 +35,7 @@ pub fn show(
     show_window(
         ctx,
         egui::ViewportId::from_hash_of("comspotter-details"),
-        "ComSpotter — Details",
+        format!("{} — Details", super::APP_TITLE),
         [820.0, 560.0],
         open,
         |ui| {
@@ -51,7 +51,7 @@ pub fn show(
                 DetailsTab::Log => log_tab(ui),
                 _ => match &state.chaseplane {
                     None => {
-                        ui.colored_label(GRAY, "Not connected to ChasePlane");
+                        ui.colored_label(gray(ui), "Not connected to ChasePlane");
                     }
                     Some(chaseplane) => match *tab {
                         DetailsTab::Camera => camera_tab(ui, chaseplane),
@@ -72,7 +72,7 @@ fn row(ui: &mut egui::Ui, label: &str, value: impl Into<egui::WidgetText>) {
 
 fn camera_tab(ui: &mut egui::Ui, chaseplane: &ChaseplaneClient) {
     let Some(camera) = chaseplane.camera_state() else {
-        ui.colored_label(GRAY, "No camera state received yet");
+        ui.colored_label(gray(ui), "No camera state received yet");
         return;
     };
 
@@ -106,7 +106,7 @@ fn camera_tab(ui: &mut egui::Ui, chaseplane: &ChaseplaneClient) {
         ui.strong("Camera position");
         match &camera.camera_position {
             None => {
-                ui.colored_label(GRAY, "none");
+                ui.colored_label(gray(ui), "none");
             }
             Some(p) => {
                 egui::Grid::new("camera-position")
@@ -130,7 +130,7 @@ fn camera_tab(ui: &mut egui::Ui, chaseplane: &ChaseplaneClient) {
         ui.strong("Look-at position");
         match &camera.look_at_position {
             None => {
-                ui.colored_label(GRAY, "none (camera isn't looking at anything)");
+                ui.colored_label(gray(ui), "none (camera isn't looking at anything)");
             }
             Some(p) => {
                 egui::Grid::new("camera-look-at")
@@ -211,11 +211,12 @@ fn traffic_row(ui: &mut egui::Ui, state: &AppState, t: &TrafficInfo, tracked: bo
 
     ui.horizontal(|ui| {
         if tracked {
-            ui.colored_label(GREEN, "🎯")
+            ui.colored_label(green(ui), "🎯")
                 .on_hover_text("Tracked in ChasePlane");
         }
         if transmitting {
-            ui.colored_label(RED, "📻").on_hover_text("Transmitting");
+            ui.colored_label(red(ui), "📻")
+                .on_hover_text("Transmitting");
         }
     });
     ui.label(&t.callsign);
@@ -367,7 +368,7 @@ fn log_tab(ui: &mut egui::Ui) {
             for entry in &entries {
                 let text = format!("{}  {}", timestamp_system(entry.at), entry.text);
                 if entry.error {
-                    ui.colored_label(RED, text);
+                    ui.colored_label(red(ui), text);
                 } else {
                     ui.label(text);
                 }

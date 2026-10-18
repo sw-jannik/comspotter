@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use eframe::egui;
 
-use super::{GRAY, GREEN, RED, show_window};
+use super::{gray, green, red, show_window};
 use crate::options::{self, Options};
 use crate::state::AppState;
 
@@ -72,7 +72,7 @@ pub fn show(
     show_window(
         ctx,
         egui::ViewportId::from_hash_of("comspotter-options"),
-        "ComSpotter — Options",
+        format!("{} — Options", super::APP_TITLE),
         [560.0, 600.0],
         open,
         |ui| {
@@ -216,15 +216,15 @@ fn buttons(ui: &mut egui::Ui, form: &mut OptionsForm, state: &AppState) -> Optio
     });
 
     match &form.message {
-        Some((true, text)) => ui.colored_label(RED, text),
-        Some((false, text)) => ui.colored_label(GREEN, text),
-        None if dirty => ui.colored_label(GRAY, "Unsaved changes"),
-        None => ui.colored_label(GRAY, "Options are up to date"),
+        Some((true, text)) => ui.colored_label(red(ui), text),
+        Some((false, text)) => ui.colored_label(green(ui), text),
+        None if dirty => ui.colored_label(gray(ui), "Unsaved changes"),
+        None => ui.colored_label(gray(ui), "Options are up to date"),
     };
 
     if let Ok(path) = options::options_path() {
         ui.add_space(4.0);
-        ui.colored_label(GRAY, format!("File: {}", path.display()));
+        ui.colored_label(gray(ui), format!("File: {}", path.display()));
     }
 
     to_apply

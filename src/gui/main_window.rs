@@ -1,6 +1,6 @@
 use eframe::egui;
 
-use super::{GRAY, GREEN, RED, ago, duration_text, status_row};
+use super::{ago, duration_text, gray, green, red, status_row};
 use crate::state::AppState;
 
 #[derive(Default)]
@@ -55,7 +55,9 @@ pub fn show(ui: &mut egui::Ui, state: &AppState) -> Actions {
 
     egui::CentralPanel::default().show(ui, |ui| {
         egui::ScrollArea::vertical().show(ui, |ui| {
-            ui.heading("ComSpotter");
+            big_row(ui, |ui| {
+                line(ui, egui::RichText::new("ComSpotter").size(24.0).strong());
+            });
             ui.add_space(4.0);
 
             status_row(ui, "ChasePlane", &state.chaseplane_status);
@@ -123,7 +125,7 @@ fn tracking_card(ui: &mut egui::Ui, state: &AppState) {
                 ui,
                 egui::RichText::new("Waiting for ChasePlane")
                     .size(18.0)
-                    .color(GRAY),
+                    .color(gray(ui)),
             ),
         });
 
@@ -155,11 +157,13 @@ fn tracking_card(ui: &mut egui::Ui, state: &AppState) {
         ui.horizontal(|ui| {
             ui.label("Mode:");
             if auto_spot {
-                ui.colored_label(GREEN, "auto-spot");
+                let color = green(ui);
+                ui.colored_label(color, "auto-spot");
             } else if target.is_some() {
                 ui.label("manual / radio tracking");
             } else {
-                ui.colored_label(GRAY, "idle");
+                let color = gray(ui);
+                ui.colored_label(color, "idle");
             }
         });
 
@@ -170,20 +174,20 @@ fn tracking_card(ui: &mut egui::Ui, state: &AppState) {
                     format!("Last tracked by ComSpotter: {callsign}, {}", ago(*at)),
                     ui.visuals().text_color(),
                 ),
-                None => ("Nothing tracked by ComSpotter yet".to_string(), GRAY),
+                None => ("Nothing tracked by ComSpotter yet".to_string(), gray(ui)),
             }),
         );
         optional_line(
             ui,
             state
                 .tracking_paused
-                .then(|| ("Tracking is paused".to_string(), RED)),
+                .then(|| ("Tracking is paused".to_string(), red(ui))),
         );
         optional_line(
             ui,
             state
                 .auto_spot_paused
-                .then(|| ("Auto-spot is paused".to_string(), RED)),
+                .then(|| ("Auto-spot is paused".to_string(), red(ui))),
         );
     });
 }
@@ -200,7 +204,8 @@ fn radio_card(ui: &mut egui::Ui, state: &AppState) {
         for slot in 0..TX_ROWS {
             big_row(ui, |ui| {
                 if let Some(tx) = state.transmitting.get(slot).filter(|_| slot < shown) {
-                    ui.colored_label(GREEN, "●");
+                    let color = green(ui);
+                    ui.colored_label(color, "●");
                     ui.label(egui::RichText::new(&tx.callsign).size(18.0).strong());
                     line(
                         ui,
@@ -211,9 +216,11 @@ fn radio_card(ui: &mut egui::Ui, state: &AppState) {
                         ),
                     );
                 } else if slot == shown && total > TX_ROWS {
-                    ui.colored_label(GREEN, format!("+{} more transmitting", total - shown));
+                    let color = green(ui);
+                    ui.colored_label(color, format!("+{} more transmitting", total - shown));
                 } else if slot == 0 {
-                    ui.colored_label(GRAY, "Silent");
+                    let color = gray(ui);
+                    ui.colored_label(color, "Silent");
                 }
             });
         }
@@ -243,7 +250,7 @@ fn radio_card(ui: &mut egui::Ui, state: &AppState) {
                         ui.visuals().text_color(),
                     )
                 }
-                None => ("No transmissions yet".to_string(), GRAY),
+                None => ("No transmissions yet".to_string(), gray(ui)),
             }),
         );
     });
@@ -269,11 +276,11 @@ fn camera_card(ui: &mut egui::Ui, state: &AppState) {
             (Some(name), _) => line(ui, egui::RichText::new(name).size(18.0).strong()),
             (None, Some(_)) => line(
                 ui,
-                egui::RichText::new("No view selected by ComSpotter").color(GRAY),
+                egui::RichText::new("No view selected by ComSpotter").color(gray(ui)),
             ),
             (None, None) => line(
                 ui,
-                egui::RichText::new("Waiting for ChasePlane").color(GRAY),
+                egui::RichText::new("Waiting for ChasePlane").color(gray(ui)),
             ),
         });
 
@@ -304,7 +311,7 @@ fn camera_card(ui: &mut egui::Ui, state: &AppState) {
             (!state.options.chaseplane.view_switching).then(|| {
                 (
                     "View switching is disabled in the options".to_string(),
-                    GRAY,
+                    gray(ui),
                 )
             }),
         );
