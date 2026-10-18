@@ -2,6 +2,8 @@
 
 ComSpotter watches radio activity in [TrackAudio](https://github.com/pierr3/TrackAudio) and makes [ChasePlane](https://parallel42.com/products/chaseplane) automatically track the aircraft that is transmitting in Microsoft Flight Simulator 2024. When nobody is talking for a while, it re-enables ChasePlane's auto-spot. Optionally, it also switches to the saved tower view closest to the aircraft.
 
+<img width="1689" height="773" alt="cs-020" src="https://github.com/user-attachments/assets/fd4ac3c7-cb1c-4a66-9da5-fa565d419d76" />
+
 ## Watch a demo
 
 Check out this video to see what ComSpotter does. Not a single user input required.
