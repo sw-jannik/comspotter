@@ -1,15 +1,18 @@
 # ComSpotter
 
-ComSpotter watches radio activity in [TrackAudio](https://github.com/pierr3/TrackAudio) and makes [ChasePlane](https://parallel42.com/products/chaseplane) automatically track the aircraft that is transmitting in Microsoft Flight Simulator 2024. When nobody is talking for a while, it re-enables ChasePlane's auto-spot. Optionally, it also switches to the saved tower view closest to the aircraft.
+ComSpotter watches radio activity in [TrackAudio](https://github.com/pierr3/TrackAudio) and makes [ChasePlane](https://parallel42.com/products/chaseplane) automatically track the aircraft that is transmitting in Microsoft Flight Simulator 2024. When nobody is talking for a while, it takes advantage of ChasePlane's auto-spot. If you have multiple tower views saved, ComSpotter can also choose the one closest to the aircraft and get the perfect shot. It's an easy way to get an automated tower view while controlling on VATSIM.
 
+<p align="center">
+  <img src="assets/icons/logo-256px.png" alt="ComSpotter logo" width="160" />
+</p>
 <img width="1689" height="773" alt="cs-020" src="https://github.com/user-attachments/assets/fd4ac3c7-cb1c-4a66-9da5-fa565d419d76" />
 
 ## Watch a demo
 
 Check out this video to see what ComSpotter does. Not a single user input required.
-On the left you'll see the ChasePlanes spotting interface and ComSpotters log so you can see what's happening behind the scenes.
+On the left you'll see ChasePlanes spotting interface and ComSpotters log so you can get a look at what's happening behind the scenes.
 
-[![Watch a demo](https://img.youtube.com/vi/6AYqGIecpmw/hqdefault.jpg)](https://www.youtube.com/watch?v=6AYqGIecpmw)
+[![Watch a demo](https://github.com/user-attachments/assets/5447894c-775f-42f6-80ff-1ced485ad628)](https://www.youtube.com/watch?v=6AYqGIecpmw)
 
 ## Quick start
 
@@ -32,10 +35,6 @@ The main window summarizes connection and tracking status, the active airport an
 ### Headless mode
 
 Run `comspotter --headless` to run without a window. Activity is logged to the console and options are read from the options file at startup. Press Ctrl+C to stop the app.
-
-### Linux
-
-Building on Linux needs the usual windowing development libraries, e.g. on Debian/Ubuntu: `sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libgl1-mesa-dev`.
 
 ## Options
 
@@ -92,3 +91,7 @@ The same values can be set manually in the MSFS graphics settings if you don't u
 ### Keeping the sim window on top
 
 To keep the small sim window on top while controlling, the **Always on top** feature in [Windows PowerToys](https://learn.microsoft.com/windows/powertoys/always-on-top) works great.
+
+### Linux
+
+Building on Linux needs the usual windowing development libraries, e.g. on Debian/Ubuntu: `sudo apt install libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxi-dev libxrandr-dev libgl1-mesa-dev`.
