@@ -87,12 +87,18 @@ fn gray(ui: &egui::Ui) -> egui::Color32 {
     )
 }
 
+const APP_ICON_PNG: &[u8] = include_bytes!("../../assets/icons/logo-256px.png");
+
 pub fn run(state: StateHandle, control: UnboundedSender<Control>) -> eframe::Result {
+    let mut viewport = egui::ViewportBuilder::default()
+        .with_title(APP_TITLE)
+        .with_inner_size([440.0, 640.0])
+        .with_min_inner_size([360.0, 560.0]);
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
+        viewport = viewport.with_icon(icon);
+    }
     let native_options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default()
-            .with_title(APP_TITLE)
-            .with_inner_size([440.0, 640.0])
-            .with_min_inner_size([360.0, 560.0]),
+        viewport,
         ..Default::default()
     };
 
@@ -204,10 +210,13 @@ fn show_window_panels(
     open: &mut bool,
     mut add_panels: impl FnMut(&mut egui::Ui),
 ) {
-    let builder = egui::ViewportBuilder::default()
+    let mut builder = egui::ViewportBuilder::default()
         .with_title(title)
         .with_inner_size(size)
         .with_min_inner_size([300.0, 200.0]);
+    if let Ok(icon) = eframe::icon_data::from_png_bytes(APP_ICON_PNG) {
+        builder = builder.with_icon(icon);
+    }
 
     ctx.show_viewport_immediate(id, builder, |ui, _class| {
         add_panels(ui);
