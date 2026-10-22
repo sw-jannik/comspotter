@@ -156,6 +156,12 @@ impl eframe::App for App {
         if let Some(paused) = actions.set_auto_spot_paused {
             self.send(Control::SetAutoSpotPaused(paused));
         }
+        if let Some(offset) = actions.set_zoom_offset {
+            self.state.update(|s| s.zoom_offset = offset);
+        }
+        if actions.stop_zoom {
+            self.send(Control::StopZoom);
+        }
         if actions.open_details {
             self.details_open = true;
         }

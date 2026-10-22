@@ -50,6 +50,7 @@ Options live in `comspotter.options.toml` next to the executable, grouped into t
 | `auto_spot_view_switching` | `true` | Also switch to the closest view when ChasePlane's auto-spot picks a new aircraft to follow. Only has an effect if `view_switching` is `true`. |
 | `auto_spot_continuous_view_switching` | `true` | While auto-spot follows an aircraft, keep switching to the closest view as it moves. Set to `false` to switch only once when auto-spot starts following an aircraft. |
 | `view_profile_theme` | `"WORLD_TOWER"` | Only ChasePlane views with this profile theme are used for view switching. `WORLD_TOWER` corresponds to the default "Tower" Group in ChasePlane |
+| `zoom_falloff_km` | `1.2` | Distance (camera to target) at which the main window's zoom offset slider has faded out completely; full effect at 0 km. `0` disables the falloff |
 
 ### [trackaudio]
 

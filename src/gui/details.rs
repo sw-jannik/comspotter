@@ -333,6 +333,11 @@ fn connections_tab(ui: &mut egui::Ui, state: &AppState) {
                 );
                 row(
                     ui,
+                    "chaseplane.zoom_falloff_km",
+                    format!("{:.2}", o.chaseplane.zoom_falloff_km),
+                );
+                row(
+                    ui,
                     "chaseplane.view_profile_theme",
                     o.chaseplane.view_profile_theme.clone(),
                 );

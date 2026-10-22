@@ -12,7 +12,7 @@ use crate::chaseplane::ChaseplaneClient;
 use crate::options::Options;
 use crate::state::{ConnStatus, Control, StateHandle};
 use crate::tracking::AircraftTracker;
-use crate::{app_error, app_info, trackaudio as ta};
+use crate::{app_error, app_info, trackaudio as ta, zoom};
 
 const RETRY_DELAY: Duration = Duration::from_secs(3);
 const STATUS_POLL: Duration = Duration::from_millis(500);
@@ -191,6 +191,7 @@ impl Engine {
                 self.state.update(|s| s.auto_spot_paused = paused);
                 Idle::Continue
             }
+            Some(Control::StopZoom) => Idle::Continue,
             Some(Control::ApplyOptions(options)) => {
                 self.options = options;
                 Idle::OptionsChanged
@@ -209,6 +210,10 @@ impl Engine {
         let mut chaseplane_connected = chaseplane.subscribe_connected();
         let mut tracker =
             AircraftTracker::new(chaseplane.clone(), self.options.clone(), self.state.clone());
+        let _zoom_watcher = AbortOnDrop(tokio::spawn(zoom::watch_zoom_offset(
+            chaseplane.clone(),
+            self.state.clone(),
+        )));
 
         self.state.update(|s| {
             s.chaseplane_status = ConnStatus::Connected;
@@ -237,6 +242,11 @@ impl Engine {
                     Some(Control::SetAutoSpotPaused(paused)) => {
                         self.state.update(|s| s.auto_spot_paused = paused);
                         tracker.set_auto_spot_paused(paused);
+                    }
+                    Some(Control::StopZoom) => {
+                        if let Err(err) = chaseplane.zoom_slider_move(0.0).await {
+                            app_error!("Failed to stop zooming: {err}");
+                        }
                     }
                     Some(Control::ApplyOptions(options)) => {
                         let reconnect = needs_reconnect(&self.options, &options);

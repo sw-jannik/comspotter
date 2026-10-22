@@ -23,6 +23,8 @@ pub struct ChaseplaneOptions {
     pub auto_spot_view_switching: bool,
     pub auto_spot_continuous_view_switching: bool,
     pub view_profile_theme: String,
+    /// Camera distance at which the zoom offset has faded out completely; 0 disables the falloff.
+    pub zoom_falloff_km: f64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -47,6 +49,7 @@ impl Default for Options {
                 auto_spot_view_switching: true,
                 auto_spot_continuous_view_switching: true,
                 view_profile_theme: DEFAULT_VIEW_THEME.to_string(),
+                zoom_falloff_km: 1.2,
             },
             trackaudio: TrackAudioOptions {
                 url: DEFAULT_TRACKAUDIO_URL.to_string(),
@@ -103,6 +106,10 @@ auto_spot_continuous_view_switching = {auto_spot_continuous_view_switching}
 # Only ChasePlane views with this profile_theme are used for view switching.
 view_profile_theme = {view_profile_theme}
 
+# The zoom offset slider's effect fades out linearly with the camera's distance to the target and
+# is gone at this distance (in km). 0 disables the falloff.
+zoom_falloff_km = {zoom_falloff_km:?}
+
 [trackaudio]
 # WebSocket URL of the TrackAudio instance (host, host:port or full URL).
 url = {trackaudio_url}
@@ -123,6 +130,7 @@ scene_change_threshold_ms = {scene_change}
         auto_spot_view_switching = d.chaseplane.auto_spot_view_switching,
         auto_spot_continuous_view_switching = d.chaseplane.auto_spot_continuous_view_switching,
         view_profile_theme = quoted(&d.chaseplane.view_profile_theme),
+        zoom_falloff_km = d.chaseplane.zoom_falloff_km,
         trackaudio_url = quoted(&d.trackaudio.url),
         track = ms(d.tracking.track_threshold),
         auto_spot = ms(d.tracking.auto_spot_threshold),
@@ -231,6 +239,11 @@ fn from_table(values: &toml::Table) -> Options {
                 "view_profile_theme",
                 &d.chaseplane.view_profile_theme,
             ),
+            zoom_falloff_km: chaseplane
+                .and_then(|s| s.get("zoom_falloff_km"))
+                .and_then(|v| v.as_float().or_else(|| v.as_integer().map(|i| i as f64)))
+                .filter(|v| v.is_finite() && *v >= 0.0)
+                .unwrap_or(d.chaseplane.zoom_falloff_km),
         },
         trackaudio: TrackAudioOptions {
             url: string_or(trackaudio, "url", &d.trackaudio.url),

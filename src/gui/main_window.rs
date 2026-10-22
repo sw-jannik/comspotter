@@ -7,6 +7,8 @@ use crate::state::AppState;
 pub struct Actions {
     pub set_tracking_paused: Option<bool>,
     pub set_auto_spot_paused: Option<bool>,
+    pub set_zoom_offset: Option<f64>,
+    pub stop_zoom: bool,
     pub open_details: bool,
     pub open_options: bool,
 }
@@ -66,7 +68,7 @@ pub fn show(ui: &mut egui::Ui, state: &AppState) -> Actions {
 
             tracking_card(ui, state);
             radio_card(ui, state);
-            camera_card(ui, state);
+            camera_card(ui, state, &mut actions);
         });
     });
 
@@ -256,7 +258,7 @@ fn radio_card(ui: &mut egui::Ui, state: &AppState) {
     });
 }
 
-fn camera_card(ui: &mut egui::Ui, state: &AppState) {
+fn camera_card(ui: &mut egui::Ui, state: &AppState, actions: &mut Actions) {
     ui.group(|ui| {
         ui.set_width(ui.available_width());
         ui.strong("Camera view");
@@ -291,6 +293,40 @@ fn camera_card(ui: &mut egui::Ui, state: &AppState) {
                 (
                     format!("Distance to target: {km:.2} km"),
                     ui.visuals().text_color(),
+                )
+            }),
+        );
+
+        let mut offset = state.zoom_offset;
+        ui.horizontal(|ui| {
+            ui.label("Zoom offset");
+            ui.spacing_mut().slider_width = (ui.available_width() - 165.0).max(60.0);
+            let slider = ui.add(egui::Slider::new(&mut offset, -0.3..=0.3).fixed_decimals(2));
+            if slider.changed() {
+                actions.set_zoom_offset = Some(offset);
+            }
+            if slider.double_clicked() {
+                actions.set_zoom_offset = Some(0.0);
+            }
+            if ui
+                .small_button("Stop zoom")
+                .on_hover_text("Send a zoom rate of 0 in case ChasePlane is stuck zooming")
+                .clicked()
+            {
+                actions.stop_zoom = true;
+            }
+        });
+        let distance = chaseplane
+            .and_then(|c| c.camera_state())
+            .and_then(|c| crate::zoom::camera_distance_km(&c));
+        let effective = state.zoom_offset
+            * crate::zoom::falloff(distance, state.options.chaseplane.zoom_falloff_km);
+        optional_line(
+            ui,
+            (state.zoom_offset != 0.0).then(|| {
+                (
+                    format!("Effective offset at current distance: {effective:+.2}"),
+                    gray(ui),
                 )
             }),
         );

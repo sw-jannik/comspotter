@@ -189,6 +189,24 @@ fn fields(ui: &mut egui::Ui, form: &mut OptionsForm) {
             "Continuous auto-spot view switching",
             "Keep switching views as the aircraft moves.",
         );
+        ui.add_space(6.0);
+        ui.separator();
+        ui.add_space(2.0);
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new("Zoom offset falloff").strong());
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.add(
+                    egui::DragValue::new(&mut draft.chaseplane.zoom_falloff_km)
+                        .suffix(" km")
+                        .speed(0.1)
+                        .range(0.0..=f64::MAX),
+                );
+            });
+        });
+        hint(
+            ui,
+            "Distance at which the zoom offset slider has faded out completely. 0 disables the falloff.",
+        );
     });
 
     section(ui, "TrackAudio", |ui| {

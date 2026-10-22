@@ -429,6 +429,16 @@ impl ChaseplaneClient {
         }
     }
 
+    /// Starts zooming the camera at the given rate (positive zooms in); ChasePlane keeps zooming
+    /// until a rate of 0 is sent. It doesn't reply.
+    pub async fn zoom_slider_move(&self, rate: f64) -> Result<()> {
+        self.send_message(json!({
+            "message": "cam_slider_move",
+            "payload": { "axis": "zoom", "value": rate },
+        }))
+        .await
+    }
+
     /// Requests that ChasePlane track/follow the aircraft with the given uId.
     pub async fn track_by_id(&self, uid: u64) -> Result<ApiReply> {
         self.send_request("ai_traffic_track", json!({ "id": uid }))

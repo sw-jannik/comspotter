@@ -9,6 +9,7 @@ mod options;
 mod state;
 mod trackaudio;
 mod tracking;
+mod zoom;
 
 use state::StateHandle;
 use tokio::sync::mpsc;

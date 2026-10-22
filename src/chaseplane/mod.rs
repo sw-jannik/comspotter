@@ -12,3 +12,4 @@ pub use error::{Error, Result};
 pub use message::{ApiReply, CameraPosition, CameraRuntimeState, LookAtPosition};
 pub use traffic::TrafficInfo;
 pub use view::View;
+pub(crate) use view::haversine_km;

@@ -38,6 +38,8 @@ pub struct AppState {
     pub trackaudio_status: ConnStatus,
     pub tracking_paused: bool,
     pub auto_spot_paused: bool,
+    /// Zoom offset slider value, -0.3..=0.3; positive zooms in.
+    pub zoom_offset: f64,
     pub transmitting: Vec<Transmission>,
     pub last_transmission: Option<LastTransmission>,
     /// Aircraft ComSpotter last asked ChasePlane to track, and when.
@@ -55,6 +57,7 @@ impl AppState {
             trackaudio_status: ConnStatus::Connecting,
             tracking_paused: false,
             auto_spot_paused: false,
+            zoom_offset: 0.0,
             transmitting: Vec::new(),
             last_transmission: None,
             last_tracked: None,
@@ -93,6 +96,8 @@ impl StateHandle {
 pub enum Control {
     SetTrackingPaused(bool),
     SetAutoSpotPaused(bool),
+    /// Sends a zoom rate of 0 to ChasePlane, in case it got stuck zooming.
+    StopZoom,
     /// Apply new options; the caller is responsible for persisting them.
     ApplyOptions(Options),
 }
